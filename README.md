@@ -8,12 +8,11 @@ SovereignCare enables patients to:
 * Store encrypted medical records off-chain using IPFS.
 * Maintain immutable and auditable access logs through Ethereum smart contracts.
 
-This project is a proof-of-concept operating on a local blockchain test network.
+_This project is a proof-of-concept operating on a local blockchain test network._
 
 ---
 
 ## 🧱 Technology Stack
-+--------------------+---------------------------+
 |       Layer        |         Technology        |
 |--------------------|---------------------------|
 | Smart Contracts    | Solidity, Truffle         |
@@ -22,7 +21,6 @@ This project is a proof-of-concept operating on a local blockchain test network.
 | Storage            | IPFS + AES-GCM encryption |
 | Testing            | Truffle, Mocha/Chai       |
 | Wallet Integration | MetaMask                  |
-+--------------------+---------------------------+
 
 ---
 
