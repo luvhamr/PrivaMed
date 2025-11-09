@@ -1,0 +1,18 @@
+services:
+  backend:
+    image: $CI_REGISTRY_IMAGE/backend:${IMAGE_TAG:-latest}
+    container_name: privamed-backend
+    restart: unless-stopped
+    environment:
+      - PORT=3333
+    ports:
+      - "3333:3333"
+
+  client:
+    image: $CI_REGISTRY_IMAGE/client:${IMAGE_TAG:-latest}
+    container_name: privamed-client
+    restart: unless-stopped
+    environment:
+      - REACT_APP_BACKEND_URL=${PUBLIC_BACKEND_URL:-http://localhost:3333}
+    ports:
+      - "3000:80"

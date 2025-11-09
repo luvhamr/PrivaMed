@@ -1,0 +1,83 @@
+stages:
+  - test
+  - build
+  - deploy
+
+variables:
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: ""
+  IMAGE_TAG: $CI_COMMIT_SHORT_SHA
+  PUBLIC_BACKEND_URL: "http://$DEPLOY_HOST:3333"
+
+# Default docker environment for most jobs
+default:
+  image: docker:25.0.3
+  services:
+    - docker:25.0.3-dind
+  before_script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" "$CI_REGISTRY"
+
+# --- 1️⃣ TEST JOB ---
+test_app:
+  stage: test
+  image: node:20-bullseye
+  script:
+    - echo "Running basic build tests..."
+    - npm install
+    - npx truffle compile
+    - cd backend && npm install && cd ..
+    - cd client && npm install && npm run build && cd ..
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" || $CI_PIPELINE_SOURCE == "merge_request_event"'
+
+# --- 2️⃣ BUILD JOB ---
+build_images:
+  stage: build
+  script:
+    - echo "Building Docker images for backend and frontend..."
+    - docker build -t $CI_REGISTRY_IMAGE/backend:$IMAGE_TAG -f backend/Dockerfile .
+    - docker build --build-arg REACT_APP_BACKEND_URL=${PUBLIC_BACKEND_URL} \
+        -t $CI_REGISTRY_IMAGE/client:$IMAGE_TAG -f client/Dockerfile .
+    - docker push $CI_REGISTRY_IMAGE/backend:$IMAGE_TAG
+    - docker push $CI_REGISTRY_IMAGE/client:$IMAGE_TAG
+  rules:
+    - if: '$CI_COMMIT_BRANCH'
+
+# --- 3️⃣ DEPLOY JOB ---
+deploy_prod:
+  stage: deploy
+  needs: [build_images]
+  image: alpine:3.20
+  before_script:
+    - apk add --no-cache openssh-client docker-cli
+    - eval "$(ssh-agent -s)"
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+
+    # Add the private key (GitLab variable)
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+
+    # Add known hosts to avoid trust prompts
+    - echo "$SSH_KNOWN_HOSTS" | tr -d '\r' > ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+
+  script:
+    - echo "Deploying to $DEPLOY_HOST as $DEPLOY_USER"
+    # Create project dir and copy docker-compose file
+    - ssh -o StrictHostKeyChecking=yes $DEPLOY_USER@$DEPLOY_HOST "mkdir -p ~/privamed"
+    - scp -o StrictHostKeyChecking=yes docker-compose.app.yml $DEPLOY_USER@$DEPLOY_HOST:~/privamed/
+
+    # Login to registry and pull + deploy on VM2
+    - |
+      ssh -o StrictHostKeyChecking=yes $DEPLOY_USER@$DEPLOY_HOST "
+        echo \"$CI_REGISTRY_PASSWORD\" | docker login -u \"$CI_REGISTRY_USER\" $CI_REGISTRY &&
+        IMAGE_TAG=$IMAGE_TAG CI_REGISTRY_IMAGE=$CI_REGISTRY_IMAGE PUBLIC_BACKEND_URL=$PUBLIC_BACKEND_URL \
+        docker compose -f ~/privamed/docker-compose.app.yml pull &&
+        IMAGE_TAG=$IMAGE_TAG CI_REGISTRY_IMAGE=$CI_REGISTRY_IMAGE PUBLIC_BACKEND_URL=$PUBLIC_BACKEND_URL \
+        docker compose -f ~/privamed/docker-compose.app.yml up -d
+      "
+
+  environment:
+    name: production
+    url: "http://$DEPLOY_HOST:3000"
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
