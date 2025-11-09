@@ -24,11 +24,15 @@ test_app:
   image: node:20-bullseye
   tags:
     - privamed
+  before_script: []
   script:
+    - echo "Running basic build tests..."
     - npm install
     - npx truffle compile
     - cd backend && npm install && cd ..
     - cd client && npm install && npm run build && cd ..
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" || $CI_PIPELINE_SOURCE == "merge_request_event"'
 
 build_images:
   stage: build
@@ -40,6 +44,8 @@ build_images:
         -t $CI_REGISTRY_IMAGE/client:$IMAGE_TAG -f client/Dockerfile .
     - docker push $CI_REGISTRY_IMAGE/backend:$IMAGE_TAG
     - docker push $CI_REGISTRY_IMAGE/client:$IMAGE_TAG
+  rules:
+    - if: '$CI_COMMIT_BRANCH'
 
 deploy_prod:
   stage: deploy
@@ -55,7 +61,7 @@ deploy_prod:
     - echo "$SSH_KNOWN_HOSTS" | tr -d '\r' > ~/.ssh/known_hosts
     - chmod 644 ~/.ssh/known_hosts
   script:
-    - echo "🚀 Deploying to $DEPLOY_HOST as $DEPLOY_USER"
+    - echo "Deploying to $DEPLOY_HOST as $DEPLOY_USER"
     - ssh -o StrictHostKeyChecking=yes $DEPLOY_USER@$DEPLOY_HOST "mkdir -p ~/privamed"
     - scp -o StrictHostKeyChecking=yes docker-compose.app.yml $DEPLOY_USER@$DEPLOY_HOST:~/privamed/
     - |
