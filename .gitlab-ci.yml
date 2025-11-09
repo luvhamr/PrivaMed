@@ -40,8 +40,7 @@ build_images:
     - privamed
   script:
     - docker build -t $CI_REGISTRY_IMAGE/backend:$IMAGE_TAG -f backend/Dockerfile .
-    - docker build --build-arg REACT_APP_BACKEND_URL=${PUBLIC_BACKEND_URL} \
-        -t $CI_REGISTRY_IMAGE/client:$IMAGE_TAG -f client/Dockerfile .
+    - docker build --build-arg REACT_APP_BACKEND_URL=${PUBLIC_BACKEND_URL} -t $CI_REGISTRY_IMAGE/client:$IMAGE_TAG -f client/Dockerfile .
     - docker push $CI_REGISTRY_IMAGE/backend:$IMAGE_TAG
     - docker push $CI_REGISTRY_IMAGE/client:$IMAGE_TAG
   rules:
