@@ -36,9 +36,15 @@ build_images:
   needs: [test_app]
   image: docker:25.0.3
   services:
-    - docker:25.0.3-dind
+    - name: docker:25.0.3-dind
+      alias: docker
   tags:
     - privamed
+  variables:
+    # Tell docker CLI to talk to the dind service
+    DOCKER_HOST: "tcp://docker:2375"
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_DRIVER: overlay2
   script:
     # Login to GitLab container registry
     - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
