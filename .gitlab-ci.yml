@@ -15,7 +15,8 @@ default:
   services:
     - docker:25.0.3-dind
   before_script:
-    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" "$CI_REGISTRY"
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+
 
 # --- 1️⃣ TEST JOB ---
 test_app:
