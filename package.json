@@ -1,0 +1,19 @@
+{
+  "name": "privamed-dapp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "PrivaMed: Decentralized Medical Record Access and Audit Platform",
+  "scripts": {
+    "truffle:compile": "truffle compile",
+    "truffle:migrate": "truffle migrate --network development",
+    "truffle:test": "truffle test"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.0.0"
+  },
+  "devDependencies": {
+    "truffle": "^5.11.5",
+    "@truffle/hdwallet-provider": "^2.1.14",
+    "web3": "^4.11.0"
+  }
+}

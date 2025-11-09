@@ -1,4 +1,7 @@
 const Migrations = artifacts.require("Migrations");
-module.exports = function (deployer) {
-  deployer.deploy(Migrations);
+const AccessControlRegistry = artifacts.require("AccessControlRegistry");
+
+module.exports = async function (deployer) {
+  await deployer.deploy(Migrations);
+  await deployer.deploy(AccessControlRegistry);
 };
