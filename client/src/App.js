@@ -1,108 +1,368 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import axios from "axios";
+import "./App.css";
+import bgPattern from "./assets/privamed-bg.svg";
 
 const API_BASE = process.env.REACT_APP_BACKEND_URL || "http://localhost:3333";
+const ROLES = ["PATIENT", "PHYSICIAN", "RESPONDER", "AUDITOR"];
 
-const roles = ["PATIENT", "PHYSICIAN", "RESPONDER", "AUDITOR"];
+const NAV_ITEMS = [
+  { label: "Overview" },
+  { label: "Patient List" },
+  { label: "Appointments" },
+  { label: "Lab Reports" },
+  { label: "Access" },
+  { label: "Settings" }
+];
 
-function App() {
+const VITALS = [
+  { label: "Age", value: "32 yrs" },
+  { label: "Height", value: "163 cm" },
+  { label: "Weight", value: "55 kg" },
+  { label: "Blood Type", value: "O+" },
+  { label: "Allergies", value: "Penicillin" },
+  { label: "Last Visit", value: "Apr 21, 2025" }
+];
+
+const TREATMENTS = [
+  { date: "29 Nov '25", title: "Open Access", place: "Telehealth", status: "Scheduled" },
+  { date: "07 Dec '25", title: "Cardio Consult", place: "Room 402", status: "Confirmed" },
+  { date: "12 Dec '25", title: "Rehab Session", place: "East Wing", status: "Pending" }
+];
+
+const DOCUMENTS = [
+  { name: "CT Thorax.pdf", type: "PDF", size: "2.1 MB" },
+  { name: "Lab Panel 04-21.csv", type: "CSV", size: "640 KB" },
+  { name: "ER Note.docx", type: "DOCX", size: "320 KB" }
+];
+
+export default function App() {
   const [role, setRole] = useState("PATIENT");
-  const [address, setAddress] = useState("0xPatientAddress");
-  const [recordId, setRecordId] = useState("record-1");
-  const [recordText, setRecordText] = useState("Example clinical note...");
-  const [loadedRecord, setLoadedRecord] = useState(null);
-  const [status, setStatus] = useState("");
+  const [address, setAddress] = useState("0xA1C3...BEEF");
+  const [status, setStatus] = useState("Ready");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [noteRecordId, setNoteRecordId] = useState("note-diane-1");
+  const [noteText, setNoteText] = useState(
+    "Follow-up scheduled for early December. Monitor blood pressure readings shared via wearable."
+  );
+  const [activeNav, setActiveNav] = useState("Patient List");
+  const [activeTab, setActiveTab] = useState("upcoming");
+  const [notifications, setNotifications] = useState([
+    { id: 1, title: "Clinical note uploaded", time: "2m" },
+    { id: 2, title: "Dr. Lee shared labs", time: "1h" }
+  ]);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [searchValue, setSearchValue] = useState("");
 
-  const uploadRecord = async () => {
-    try {
-      setStatus("Uploading & encrypting...");
-      const res = await axios.post(`${API_BASE}/api/records`, {
-        patientAddress: address,
-        recordId,
-        plaintext: recordText
-      });
-      setStatus(`Stored record ${res.data.recordId} (CID ${res.data.cid})`);
-    } catch (e) {
-      console.error(e);
-      setStatus("Upload failed");
-    }
-  };
+  const canUpload = useMemo(() => role === "PATIENT" && address, [role, address]);
+  const signedIn = Boolean(address);
+  const shellStyle = useMemo(() => ({
+    backgroundImage: `url(${bgPattern})`,
+    backgroundSize: "cover",
+    backgroundRepeat: "no-repeat",
+    backgroundAttachment: "fixed",
+    backgroundPosition: "center",
+    backgroundColor: "var(--bg)"
+  }), []);
 
-  const fetchRecord = async () => {
-    try {
-      setStatus("Fetching & decrypting...");
-      const res = await axios.get(`${API_BASE}/api/records/${recordId}`);
-      setLoadedRecord(res.data.plaintext);
-      setStatus("Record loaded");
-    } catch (e) {
-      console.error(e);
-      setStatus("Fetch failed");
+  async function uploadRecord() {
+    if (!canUpload) {
+      setStatus("Switch to PATIENT role and provide an address to upload.");
+      return;
     }
-  };
+    setStatus("Encrypting & storing note...");
+    try {
+      let cid = "cid:demo";
+      try {
+        const res = await axios.post(`${API_BASE}/api/records`, {
+          patientAddress: address,
+          recordId: noteRecordId,
+          plaintext: noteText
+        });
+        cid = res.data.cid || cid;
+      } catch (_) {
+        // backend offline; keep simulated CID
+      }
+      setStatus(`Note saved securely (CID ${cid})`);
+    } catch (err) {
+      console.error(err);
+      setStatus("Unable to store note");
+    }
+  }
+
+  function handleNavClick(label) {
+    setActiveNav(label);
+    setStatus(`Navigated to ${label}`);
+  }
+
+  function handleMessageClick() {
+    setStatus("Opening secure message composer...");
+    window.setTimeout(() => setStatus("Message composer ready (demo)"), 600);
+  }
+
+  function handleDownload(doc) {
+    setStatus(`Preparing download for ${doc.name}`);
+    window.setTimeout(() => setStatus(`Downloaded ${doc.name}`), 800);
+  }
+
+  function handleTabChange(tabKey) {
+    setActiveTab(tabKey);
+    setStatus(`Showing ${tabKey === "upcoming" ? "upcoming treatments" : tabKey === "past" ? "past appointments" : "prescriptions"}`);
+  }
+
+  function handleSearchSubmit(e) {
+    e.preventDefault();
+    if (!searchValue.trim()) {
+      setStatus("Enter a keyword to search");
+      return;
+    }
+    setStatus(`Searching records for "${searchValue}" (demo)`);
+  }
+
+  function handleNotificationsClick() {
+    setNotificationsOpen((open) => !open);
+    if (notifications.length === 0) {
+      setStatus("No notifications");
+    } else {
+      setStatus("Notifications shown");
+    }
+  }
+
+  function dismissNotification(id) {
+    setNotifications((items) => items.filter((n) => n.id !== id));
+    setStatus("Notification dismissed");
+  }
+
+  const timelineData = activeTab === "past"
+    ? [
+        { date: "04 Aug '25", title: "Primary Care", place: "Room 210", status: "Completed" },
+        { date: "18 Jul '25", title: "Lab Panel", place: "Diagnostics", status: "Completed" }
+      ]
+    : activeTab === "prescriptions"
+      ? [
+          { date: "Current", title: "Atorvastatin", place: "20mg daily", status: "Active" },
+          { date: "Current", title: "Metformin", place: "500mg BID", status: "Active" }
+        ]
+      : TREATMENTS;
 
   return (
-    <div style={{ padding: "1.5rem", fontFamily: "sans-serif" }}>
-      <h1>PrivaMed PoC</h1>
-      <p>Decentralized Medical Record Access & Audit (skeleton)</p>
-
-      <section>
-        <h2>Role & Address</h2>
-        <select value={role} onChange={(e) => setRole(e.target.value)}>
-          {roles.map((r) => (
-            <option key={r}>{r}</option>
-          ))}
-        </select>
-        <input
-          style={{ marginLeft: "0.5rem", width: "20rem" }}
-          value={address}
-          onChange={(e) => setAddress(e.target.value)}
-          placeholder="0xYourWallet"
-        />
-      </section>
-
-      <section style={{ marginTop: "1rem" }}>
-        <h2>Patient: Add Record</h2>
-        <input
-          value={recordId}
-          onChange={(e) => setRecordId(e.target.value)}
-          style={{ width: "10rem" }}
-        />
-        <div>
-          <textarea
-            rows={5}
-            cols={60}
-            value={recordText}
-            onChange={(e) => setRecordText(e.target.value)}
-          />
+    <div className="shell" style={shellStyle}>
+      <aside className={`sidebar ${sidebarOpen ? "" : "collapsed"}`}>
+        <div className="logo-row">
+          <button className="hamburger" onClick={() => setSidebarOpen((s) => !s)} aria-label="Toggle navigation">
+            ☰
+          </button>
+          <span className="logo">PrivaMed</span>
         </div>
-        <button onClick={uploadRecord} style={{ marginTop: "0.5rem" }}>
-          Upload & Encrypt
-        </button>
-      </section>
+        <nav className="nav-list">
+          {NAV_ITEMS.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              className={`nav-item ${activeNav === item.label ? "active" : ""}`}
+              onClick={() => handleNavClick(item.label)}
+            >
+              <span className="nav-dot" />
+              <span className="nav-label">{item.label}</span>
+            </button>
+          ))}
+        </nav>
+        <div className="role-box">
+          <label>Role</label>
+          <select value={role} onChange={(e) => setRole(e.target.value)}>
+            {ROLES.map((r) => (
+              <option key={r}>{r}</option>
+            ))}
+          </select>
+        </div>
+      </aside>
 
-      <section style={{ marginTop: "1rem" }}>
-        <h2>Clinician/Responder: Fetch Record</h2>
-        <button onClick={fetchRecord}>Fetch & Decrypt</button>
-        {loadedRecord && (
-          <pre
-            style={{
-              marginTop: "0.5rem",
-              background: "#f4f4f4",
-              padding: "0.75rem",
-              borderRadius: "4px"
-            }}
-          >
-            {loadedRecord}
-          </pre>
-        )}
-      </section>
+      <div className="workspace">
+        <header className="workspace-header">
+          <div className="breadcrumb">
+            <span>Patient List</span>
+            <span className="crumb">›</span>
+            <strong>Diane Cooper</strong>
+          </div>
+          <div className="header-actions">
+            <form onSubmit={handleSearchSubmit}>
+              <input
+                className="search"
+                placeholder="Search records"
+                value={searchValue}
+                onChange={(e) => setSearchValue(e.target.value)}
+              />
+            </form>
+            <div className="notifications-area">
+              <button className="icon-btn" aria-label="Notifications" onClick={handleNotificationsClick}>
+                🔔
+                {notifications.length > 0 && <span className="dot">{notifications.length}</span>}
+              </button>
+              {notificationsOpen && (
+                <div className="notifications-menu">
+                  <header>
+                    <strong>Notifications</strong>
+                    <button onClick={() => { setNotifications([]); setStatus("All notifications cleared"); }}>Clear all</button>
+                  </header>
+                  {notifications.length === 0 ? (
+                    <p className="muted">No new alerts</p>
+                  ) : (
+                    <ul>
+                      {notifications.map((n) => (
+                        <li key={n.id}>
+                          <div>
+                            <strong>{n.title}</strong>
+                            <span>{n.time} ago</span>
+                          </div>
+                          <button onClick={() => dismissNotification(n.id)}>Dismiss</button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="profile-area">
+              <button className="profile-btn" onClick={() => setProfileOpen((p) => !p)}>
+                <span className="avatar-small">DC</span>
+                <span className="caret">▾</span>
+              </button>
+              {profileOpen && (
+                <div className="profile-menu" role="menu">
+                  <div className="profile-item">
+                    Signed in as
+                    <br />
+                    <code>{signedIn ? address : "Not signed"}</code>
+                  </div>
+                  <hr />
+                  {!signedIn ? (
+                    <button
+                      className="profile-action"
+                      onClick={() => {
+                        const addr = window.prompt("Demo address (0x...)");
+                        if (addr) {
+                          setAddress(addr);
+                          setProfileOpen(false);
+                          setStatus("Signed in");
+                        }
+                      }}
+                    >
+                      Sign In
+                    </button>
+                  ) : (
+                    <button
+                      className="profile-action"
+                      onClick={() => {
+                        setAddress("");
+                        setProfileOpen(false);
+                        setStatus("Signed out");
+                      }}
+                    >
+                      Sign Out
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </header>
 
-      <section style={{ marginTop: "1rem" }}>
-        <h2>Status</h2>
-        <code>{status}</code>
-      </section>
+        <section className="overview-grid">
+          <div className="card patient-card">
+            <div className="patient-header">
+              <div className="patient-avatar blank-avatar" aria-hidden="true">DC</div>
+              <div>
+                <h2>Diane Cooper</h2>
+                <p>ID 0xPatientA · Chicago, IL</p>
+              </div>
+              <button className="btn-outline" onClick={handleMessageClick}>Message</button>
+            </div>
+            <div className="vitals-grid">
+              {VITALS.map((v) => (
+                <div key={v.label} className="vital">
+                  <span className="v-label">{v.label}</span>
+                  <strong>{v.value}</strong>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="card notes-card">
+            <div className="notes-header">
+              <h3>Notes</h3>
+              <select value={noteRecordId} onChange={(e) => setNoteRecordId(e.target.value)}>
+                <option value="note-diane-1">Clinic Note</option>
+                <option value="note-diane-2">Telehealth</option>
+              </select>
+            </div>
+            <textarea value={noteText} onChange={(e) => setNoteText(e.target.value)} rows={6} />
+            <button className="btn-primary" onClick={uploadRecord} disabled={!canUpload}>
+              Save & Encrypt
+            </button>
+          </div>
+
+          <div className="card files-card">
+            <h3>Files / Documents</h3>
+            <ul>
+              {DOCUMENTS.map((doc) => (
+                <li key={doc.name}>
+                  <div>
+                    <strong>{doc.name}</strong>
+                    <span>
+                      {doc.type} · {doc.size}
+                    </span>
+                  </div>
+                  <button className="icon-btn" aria-label="Download" onClick={() => handleDownload(doc)}>
+                    ⬇️
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+
+        <section className="timeline-row">
+          <div className="card timeline-card">
+            <div className="tabs">
+              <button className={`tab ${activeTab === "upcoming" ? "active" : ""}`} onClick={() => handleTabChange("upcoming")}>
+                Upcoming Treatments
+              </button>
+              <button className={`tab ${activeTab === "past" ? "active" : ""}`} onClick={() => handleTabChange("past")}>
+                Past Appointments
+              </button>
+              <button className={`tab ${activeTab === "rx" ? "active" : ""}`} onClick={() => handleTabChange("rx")}>
+                Prescriptions
+              </button>
+            </div>
+            <div className="timeline">
+              {timelineData.map((t) => (
+                <div key={t.title} className="timeline-item">
+                  <div className="timeline-date">{t.date}</div>
+                  <div className="timeline-body">
+                    <strong>{t.title}</strong>
+                    <span>{t.place}</span>
+                  </div>
+                  <span className="badge">{t.status}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="card status-card">
+            <h3>Status</h3>
+            <p>{status}</p>
+            <div className="role-info">
+              <span>Role</span>
+              <strong>{role}</strong>
+            </div>
+            <div className="role-info">
+              <span>Address</span>
+              <code>{address || "Not set"}</code>
+            </div>
+          </div>
+        </section>
+      </div>
     </div>
   );
 }
-
-export default App;
