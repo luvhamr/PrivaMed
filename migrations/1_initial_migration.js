@@ -1,7 +1,5 @@
-const Migrations = artifacts.require("Migrations");
-const AccessControlRegistry = artifacts.require("AccessControlRegistry");
+const PrivaMed = artifacts.require("PrivaMed");
 
-module.exports = async function (deployer) {
-  await deployer.deploy(Migrations);
-  await deployer.deploy(AccessControlRegistry);
+module.exports = function (deployer) {
+  deployer.deploy(PrivaMed);
 };
