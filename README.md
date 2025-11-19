@@ -48,7 +48,7 @@ ipfs daemon
 ### 5. Run Client Application
 ```bash
 cd client/
-npm run start:frontend
+npm start
 ```
 
 ## 📂 Project Architecture
