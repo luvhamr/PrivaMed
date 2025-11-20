@@ -12,41 +12,36 @@ pragma solidity ^0.8.0;
 /// @notice Stores patient record metadata (CIDs), grants/revokes access, logs access attempts, support for emergency access
 /// @dev    PHI & PII is never stored here.
 
-contract PrivaMed{    
+contract PrivaMed {
 /// =============================================================================================================
 /// Fields & Structures
 /// =============================================================================================================
     
-    // Roles 
-    enum Role { None, Patient, Provider, Auditor } 
+    enum Role { None, Patient, Provider, Auditor }
 
-    struct User { Role role;
-        bool exitst;
+    struct User {
+        Role role;
+        bool exists;
     }
 
-    //  Create new record - store an owner w/ patient address, IPFS CID, and timestamp
     struct Record {
-       address owner;           // patient address
-       string cid;              // IPFS CID (encrypted)
+       address owner;
+       string cid;
        uint256 createdAt;
-       bool exists;     
+       bool exists;
     }
         
-    // Grant access - store grantee address, valid access period, active request flag;
-    //  only registered patients and can add records or grant/revoke access to their records
-    struct AccessGranted {
-        bool active;            // true, if grant flag is currently active
-        uint256 validUntil;     // timestamp for valid access period (0 == indefinite access)
-        bytes32 scope;          // scope ID (ex: "LABS", "NOTES", "PRESCRIPTIONS")
+    struct AccessGrant {
+        bool active;
+        uint256 validUntil;
+        bytes32 scope;
     }
 
-    // Request access - store provider/physician-request metadata for async approval
-    // Log Access Events - backend function for tracking record access events: retrieval and decryption
-    struct AccessRequest{
-        address requester;      // address of provider or emergency access requester
-        bytes32 recordID;       // requester's ID
-        string reason;          // plaintext: reason for record access
-        uint255 createdAt;
+    struct AccessRequest {
+        address requester;
+        bytes32 recordId;
+        string reason;
+        uint256 createdAt;
         bool fulfilled;
     }
 
@@ -69,7 +64,7 @@ contract PrivaMed{
     mapping(bytes32 => Record) public records;  //recordId -> Record
 
     // Mapping record access requests: recordId -> grantee -> AccessGrant
-    mapping(bytes32 => mapping(adress => AccessGrant)) public grants;
+    mapping(bytes32 => mapping(address => AccessGrant)) public grants;
 
     // Store access requests
     AccessRequest[] public requests;
@@ -78,13 +73,22 @@ contract PrivaMed{
     address public admin;
 
     // Role requirements
-    modifier onlyAdmin() {require(msg.sender == admin, "Admin only");_;}
-    modifier onlyRegistered() {require(users[msg.sender].exists, "User not registered");_;}
-    modifier onlyPatient() {require(users[patient].exists && users[patient].role, "Not a patient");_;}
-    modifier recordExists() {require(records[recordId].exists, "Record not found");_;}
+    modifier onlyAdmin() {
+        require(msg.sender == admin, "Admin only");
+        _;
+    }
+    modifier onlyRegistered() {
+        require(users[msg.sender].exists, "User not registered");
+        _;
+    }
+    modifier recordExists(bytes32 recordId) {
+        require(records[recordId].exists, "Record not found");
+        _;
+    }
 
-    // Contract constructor
-    constructor() {admin = msg.sender;}
+    constructor() {
+        admin = msg.sender;
+    }
 
 
 /// ==============================================================================================================
@@ -227,7 +231,7 @@ contract PrivaMed{
     
     // Fetch requests by id 
     function getRequest(uint256 requestId) external view returns (AccessRequest memory) {
-        require(requestId < request.length, "invalid id");
+        require(requestId < requests.length, "invalid id");
         return requests[requestId];
     }
 
