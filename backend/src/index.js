@@ -3,16 +3,25 @@ const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
 const { ethers } = require("ethers");
-const ROLE_PATIENT = ethers.keccak256(ethers.toUtf8Bytes("PATIENT"));
-const ROLE_AUDITOR = ethers.keccak256(ethers.toUtf8Bytes("AUDITOR")); // we'll use this for the backend/owner
-const { generateSymmetricKey, encryptRecord, decryptRecord } = require("./encryption");
+const {
+  generateSymmetricKey,
+  encryptRecord,
+  decryptRecord
+} = require("./encryption");
 const { addJson, getJson } = require("./ipfs");
 const path = require("path");
 const fs = require("fs");
 
-// blockchain
+// -----------------------------------------------------------------------------
+// Blockchain setup
+// -----------------------------------------------------------------------------
 const WEB3_PROVIDER = process.env.WEB3_PROVIDER || "http://127.0.0.1:8545";
 const provider = new ethers.JsonRpcProvider(WEB3_PROVIDER);
+
+// Solidity enum: enum Role { None, Patient, Provider, Auditor }
+const ROLE_PATIENT = 1;
+const ROLE_PROVIDER = 2;
+const ROLE_AUDITOR = 3; // backend/admin
 
 // ---- Contract artifact (Truffle) ----
 const artifactPath = path.join(
@@ -21,50 +30,96 @@ const artifactPath = path.join(
   "..",
   "build",
   "contracts",
-  "AccessControlRegistry.json"
+  "PrivaMed.json"
 );
 
 const artifact = JSON.parse(fs.readFileSync(artifactPath, "utf8"));
+const PRIVAMED_ABI = artifact.abi;
 
-const ACCESS_REGISTRY_ABI = artifact.abi;
+// We'll lazily resolve the correct contract address for the current network.
+let PRIVAMED_ADDRESS_CACHE = process.env.PRIVAMED_ADDRESS || null;
 
-// pick the first network (usually Ganache = 5777)
-const artifactNetworks = artifact.networks || {};
-const firstNetworkId = Object.keys(artifactNetworks)[0];
-const deployedAddress =
-  (firstNetworkId && artifactNetworks[firstNetworkId].address) ||
-  process.env.ACCESS_REGISTRY_ADDRESS ||
-  "0x0000000000000000000000000000000000000000";
-
-const ACCESS_REGISTRY_ADDRESS = deployedAddress;
-
-function getContract(signerOrProvider) {
-  if (
-    !ACCESS_REGISTRY_ADDRESS ||
-    ACCESS_REGISTRY_ADDRESS === "0x0000000000000000000000000000000000000000"
-  ) {
-    throw new Error("AccessControlRegistry not deployed or address not set");
+// Resolve PrivaMed address based on the *actual* provider network ID
+async function getPrivaMedAddress() {
+  // If an explicit env var is set, prefer that
+  if (PRIVAMED_ADDRESS_CACHE) {
+    return PRIVAMED_ADDRESS_CACHE;
   }
-  return new ethers.Contract(ACCESS_REGISTRY_ADDRESS, ACCESS_REGISTRY_ABI, signerOrProvider);
+
+  const network = await provider.getNetwork();
+  const chainIdNum = Number(network.chainId);
+  const networks = artifact.networks || {};
+
+  // Truffle networks keys are usually strings, sometimes numbers depending on tooling
+  const net =
+    networks[chainIdNum] ||
+    networks[String(chainIdNum)] ||
+    networks[network.chainId];
+
+  if (!net || !net.address) {
+    throw new Error(
+      `PrivaMed not deployed on network ${chainIdNum}. Did you run "truffle migrate --reset --network development"?`
+    );
+  }
+
+  PRIVAMED_ADDRESS_CACHE = net.address;
+  console.log("Resolved PrivaMed contract address:", PRIVAMED_ADDRESS_CACHE);
+  return PRIVAMED_ADDRESS_CACHE;
 }
 
+async function getContract(signerOrProvider) {
+  const addr = await getPrivaMedAddress();
+  return new ethers.Contract(addr, PRIVAMED_ABI, signerOrProvider);
+}
+
+
+// Robustly get a signer for the first Ganache account, whether listAccounts()
+// returns plain strings or objects with an .address field.
 async function getSigner() {
   const accounts = await provider.listAccounts();
-  return provider.getSigner(accounts[0].address);
-}
-
-async function ensureUserRegistered(contract, address, role) {
-  // users is a public mapping, so we can call contract.users(address)
-  const user = await contract.users(address);
-  if (user.exists) {
-    return;
+  if (!accounts.length) {
+    throw new Error("No accounts available from provider");
   }
-  console.log(`[CHAIN] Registering user ${address} with role ${role}`);
-  const tx = await contract.registerUser(address, role, "");
-  await tx.wait();
+
+  const first = accounts[0];
+  let address;
+
+  if (typeof first === "string") {
+    address = first;
+  } else if (first && typeof first.address === "string") {
+    // In case some provider returns signer-like objects
+    address = first.address;
+  } else {
+    throw new Error(
+      `Unsupported account shape from provider: ${JSON.stringify(first)}`
+    );
+  }
+
+  return provider.getSigner(address);
 }
 
+// Ensure the given address is registered on-chain with the given role
+async function ensureUserRegistered(contract, address, role) {
+  try {
+    const user = await contract.users(address); // { role, exists }
+    if (user && user.exists) {
+      return;
+    }
+    console.log(`[CHAIN] Registering user ${address} with role ${role}`);
+    const tx = await contract.registerUser(address, role);
+    await tx.wait();
+  } catch (err) {
+    console.error(
+      `[CHAIN] Failed to ensure user registered for ${address}:`,
+      err
+    );
+    throw err;
+  }
+}
 
+// -----------------------------------------------------------------------------
+// Express app
+// -----------------------------------------------------------------------------
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: "5mb" }));
@@ -72,42 +127,134 @@ app.use(morgan("dev"));
 
 const PORT = process.env.PORT || 3333;
 
-// in-memory PoC store
-const localRecords = new Map(); // recordId -> { cid, owner, keyHex }
+// In-memory PoC store: recordId (string) -> { cid, owner, keyHex, recordIdHash }
+const localRecords = new Map();
 
-app.get("/health", (_req, res) => {
-  res.json({ ok: true, network: WEB3_PROVIDER });
+app.get("/health", async (_req, res) => {
+  try {
+    let addr = null;
+    try {
+      addr = await getPrivaMedAddress();
+    } catch {
+      addr = null;
+    }
+    res.json({ ok: true, network: WEB3_PROVIDER, contract: addr });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: "health check failed" });
+  }
 });
 
+
+// List Ganache accounts so the frontend can treat 0 as patient and others as providers
+app.get("/api/accounts", async (_req, res) => {
+  try {
+    const raw = await provider.listAccounts();
+
+    const accounts = (raw || []).map((a) =>
+      typeof a === "string" ? a : a.address
+    );
+
+    res.json({ accounts });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "failed to list accounts" });
+  }
+});
+
+// -----------------------------------------------------------------------------
+// Store a record (note + optional file) off-chain and TRY to register on-chain
+// -----------------------------------------------------------------------------
 app.post("/api/records", async (req, res) => {
   try {
-    const { patientAddress, recordId, plaintext } = req.body;
-    if (!patientAddress || !recordId || !plaintext) {
-      return res.status(400).json({ error: "patientAddress, recordId, plaintext required" });
+    const { patientAddress, recordId, plaintext, fileMeta } = req.body;
+
+    const hasPlaintext =
+      typeof plaintext === "string" && plaintext.trim().length > 0;
+    const hasFile =
+      fileMeta &&
+      typeof fileMeta.base64 === "string" &&
+      fileMeta.base64.length > 0 &&
+      typeof fileMeta.name === "string";
+
+    if (!patientAddress || !recordId || (!hasPlaintext && !hasFile)) {
+      return res.status(400).json({
+        error:
+          "patientAddress and recordId required, plus either plaintext or fileMeta.base64"
+      });
     }
 
+    // 1) Build an envelope that can hold either a note or a file
+    let contentEnvelope;
+    if (hasFile) {
+      contentEnvelope = {
+        kind: "file",
+        fileName: fileMeta.name,
+        mimeType: fileMeta.type || "application/octet-stream",
+        size: fileMeta.size || null,
+        base64: fileMeta.base64,
+        note: hasPlaintext ? plaintext : null
+      };
+    } else {
+      contentEnvelope = {
+        kind: "note",
+        text: plaintext
+      };
+    }
+
+    // 2) Encrypt the envelope (JSON string)
     const key = generateSymmetricKey();
-    const enc = encryptRecord(plaintext, key);
+    const enc = encryptRecord(JSON.stringify(contentEnvelope), key);
+
+    // 3) Store encrypted blob in IPFS stub (or real IPFS later)
     const cid = await addJson(enc);
 
+    // 4) Store mapping locally
     localRecords.set(recordId, {
       cid,
       owner: patientAddress,
-      keyHex: key.toString("hex")
+      keyHex: key.toString("hex"),
+      recordIdHash: null
     });
 
-    const recordIdHash = ethers.keccak256(ethers.toUtf8Bytes(recordId));
+    // 5) TRY to talk to the PrivaMed contract (but don't fail the whole request
+    //    if the contract call reverts or contract is not deployed).
+    let recordIdHash = null;
+    try {
+      // Use the "admin" signer (first Ganache account) as the auditor
+      const adminSigner = await getSigner(); // account[0] from Ganache
+      const contract = await getContract(adminSigner);
 
-    const signer = await getSigner();
-    const contract = getContract(signer);
+      // Ensure the patient is registered as a patient
+      await ensureUserRegistered(contract, patientAddress, ROLE_PATIENT);
 
-    // auto-register backend/owner and patient
-    const ownerAddress = await contract.owner();
-    await ensureUserRegistered(contract, ownerAddress, ROLE_AUDITOR);
-    await ensureUserRegistered(contract, patientAddress, ROLE_PATIENT);
+      // addRecord will now accept msg.sender as Auditor OR Patient
+      const tx = await contract.addRecord(cid);
+      const receipt = await tx.wait();
 
-    const tx = await contract.addRecord(recordIdHash, cid, patientAddress);
-    await tx.wait();
+      // parse logs to find recordId (from RecordAdded event)
+      for (const log of receipt.logs) {
+        try {
+          const parsed = contract.interface.parseLog(log);
+          if (parsed.name === "RecordAdded") {
+            recordIdHash = parsed.args.recordId;
+            break;
+          }
+        } catch (_) {
+          // ignore logs that don't match this contract
+        }
+      }
+
+      const meta = localRecords.get(recordId);
+      if (meta) {
+        meta.recordIdHash = recordIdHash;
+        localRecords.set(recordId, meta);
+      }
+    } catch (chainErr) {
+      console.error(
+        "[CHAIN] Failed to register record on-chain (continuing with off-chain storage only):",
+        chainErr
+      );
+    }
 
     res.json({ recordId, cid, recordIdHash });
   } catch (e) {
@@ -116,6 +263,10 @@ app.post("/api/records", async (req, res) => {
   }
 });
 
+
+// -----------------------------------------------------------------------------
+// Fetch a record (decrypt and return envelope: note or file)
+// -----------------------------------------------------------------------------
 app.get("/api/records/:recordId", async (req, res) => {
   try {
     const { recordId } = req.params;
@@ -126,17 +277,95 @@ app.get("/api/records/:recordId", async (req, res) => {
 
     const enc = await getJson(meta.cid);
     const keyBuf = Buffer.from(meta.keyHex, "hex");
-    const plaintext = decryptRecord(enc, keyBuf);
+    const decrypted = decryptRecord(enc, keyBuf);
 
-    // later: verify hasAccess on chain
+    let payload;
+    try {
+      // New-style encrypted JSON envelope
+      payload = JSON.parse(decrypted);
+    } catch {
+      // Backwards compatibility for legacy plaintext-only notes
+      payload = { kind: "note", text: decrypted };
+    }
 
-    res.json({ recordId, plaintext });
+    // NOTE: for production, you would call an on-chain
+    // isAuthorized(meta.recordIdHash, actorAddress) check here
+    // before returning the decrypted payload.
+    res.json({
+      recordId,
+      payload,
+      cid: meta.cid,
+      recordIdHash: meta.recordIdHash
+    });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "failed to fetch record" });
   }
 });
 
+// -----------------------------------------------------------------------------
+// Grant access to a provider
+// Body: { recordIdHash, providerAddress, validUntil?, scope? }
+// -----------------------------------------------------------------------------
+app.post("/api/access/grant", async (req, res) => {
+  try {
+    const { recordIdHash, providerAddress, validUntil, scope } = req.body;
+    if (!recordIdHash || !providerAddress) {
+      return res
+        .status(400)
+        .json({ error: "recordIdHash and providerAddress required" });
+    }
+
+    const signer = await getSigner();
+    const contract = await getContract(signer);
+
+    // ensure provider is registered
+    await ensureUserRegistered(contract, providerAddress, ROLE_PROVIDER);
+
+    const tx = await contract.grantAccess(
+      recordIdHash,
+      providerAddress,
+      validUntil || 0,
+      scope || ethers.ZeroHash
+    );
+    await tx.wait();
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "failed to grant access" });
+  }
+});
+
+// -----------------------------------------------------------------------------
+// Revoke access from a provider
+// Body: { recordIdHash, providerAddress }
+// -----------------------------------------------------------------------------
+app.post("/api/access/revoke", async (req, res) => {
+  try {
+    const { recordIdHash, providerAddress } = req.body;
+    if (!recordIdHash || !providerAddress) {
+      return res
+        .status(400)
+        .json({ error: "recordIdHash and providerAddress required" });
+    }
+
+    const signer = await getSigner();
+    const contract = await getContract(signer);
+
+    const tx = await contract.revokeAccess(recordIdHash, providerAddress);
+    await tx.wait();
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "failed to revoke access" });
+  }
+});
+
+// -----------------------------------------------------------------------------
+// Start server
+// -----------------------------------------------------------------------------
 app.listen(PORT, () => {
   console.log(`PrivaMed backend listening on port ${PORT}`);
 });
