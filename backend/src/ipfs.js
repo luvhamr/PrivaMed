@@ -1,33 +1,51 @@
 // backend/src/ipfs.js
-// Dev stub: in-memory "IPFS-like" storage for JSON objects.
-// This avoids needing a real IPFS daemon when developing locally.
+// Real IPFS client version compatible with ESM-only ipfs-http-client in a CJS backend.
 
-const IPFS_API_URL = process.env.IPFS_API || "http://localhost:5001";
+console.log("LOADED ipfs.js FROM:", __filename);
+const { TextDecoder } = require("util");
 
-// Simple local store keyed by fake CIDs
-const localStore = new Map();
-let counter = 0;
+// Lazy-load the ESM ipfs-http-client using dynamic import
+let ipfsPromise = null;
 
-/**
- * Simulate adding JSON to IPFS.
- * Returns a fake CID string like "local-0", "local-1", ...
- */
-async function addJson(obj) {
-  const cid = `local-${counter++}`;
-  localStore.set(cid, obj);
-  console.log(`[IPFS-STUB] Stored JSON under CID ${cid}`);
-  return cid;
-}
-
-/**
- * Simulate fetching JSON from IPFS by CID.
- */
-async function getJson(cid) {
-  if (!localStore.has(cid)) {
-    throw new Error(`[IPFS-STUB] No entry for CID ${cid}`);
+async function getIpfs() {
+  if (!ipfsPromise) {
+    ipfsPromise = import("ipfs-http-client").then((mod) => {
+      // ipfs-http-client exports { create }
+      const create = mod.create;
+      if (typeof create !== "function") {
+        throw new Error("ipfs-http-client: 'create' export not found");
+      }
+      return create({
+        url: process.env.IPFS_API_URL || "http://127.0.0.1:5001"
+      });
+    });
   }
-  console.log(`[IPFS-STUB] Loaded JSON from CID ${cid}`);
-  return localStore.get(cid);
+  return ipfsPromise;
 }
 
-module.exports = { addJson, getJson, IPFS_API_URL };
+// Store an arbitrary JSON-serializable object in IPFS
+// Returns a real IPFS CID string like "Qm..." or "bafy..."
+async function addJson(obj) {
+  const ipfs = await getIpfs();
+  const data = JSON.stringify(obj);
+  const { cid } = await ipfs.add(data);
+  const cidStr = cid.toString();
+  console.log("[IPFS] Stored JSON under CID", cidStr);
+  return cidStr;
+}
+
+// Fetch JSON from IPFS by CID and parse it
+async function getJson(cid) {
+  const ipfs = await getIpfs();
+  const decoder = new TextDecoder();
+  let content = "";
+
+  for await (const chunk of ipfs.cat(cid)) {
+    content += decoder.decode(chunk, { stream: true });
+  }
+  content += decoder.decode();
+
+  return JSON.parse(content);
+}
+
+module.exports = { addJson, getJson };
