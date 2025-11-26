@@ -2,7 +2,7 @@
 A privacy-focused decentralized application (DApp) empowering patients to control access to their medical records while ensuring data integrity and secure interoperability.
 
 ## 🚀 Project Overview
-SovereignCare enables patients to:
+PrivaMed enables patients to:
 * Own and control access to their health data.
 * Authorize and revoke provider access at any time.
 * Store encrypted medical records off-chain using IPFS.
@@ -20,7 +20,7 @@ _This project is a proof-of-concept operating on a local blockchain test network
 | Frontend           | React + Web3.js           |
 | Storage            | IPFS + AES-GCM encryption |
 | Testing            | Truffle, Mocha/Chai       |
-| Wallet Integration | MetaMask                  |
+| Wallet Integration | Ganache RPC               |
 
 ---
 
@@ -28,25 +28,31 @@ _This project is a proof-of-concept operating on a local blockchain test network
 
 ### 1. Install Dependencies
 ```bash
+git clone https://github.com/luvhamr/PrivaMed.git
 cd PrivaMed
 npm install
 cd client && npm install
 ```
 ### 2. Start Ganache
 ```bash
-ganache-cli -p 8545 &
+ganache -p 8545 --chain.chainId 1337 --chain.networkId 1337 &
 ```
 ### 3. Compile and Deploy Smart Contracts
 ```bash
 truffle compile
-truffle migrate --network development
+truffle migrate --reset --network development
 ```
 ### 4. Start IPFS Node
 ```bash
+cd backend
+npm install ipfs-http-client
 ipfs daemon
 ```
-### 5. Run Client Application
+### 5. Run Server & Client Application
 ```bash
+cd backend
+npm run dev
+
 cd client/
 npm start
 ```
@@ -68,9 +74,8 @@ truffle test
 - Encryption keys remain in the user's custody.
 
 ## 👥 Team Members
-- Developer A Smart Contract Lead
-- Developer B Blockchain Integration 
-- Developer C Frontend Lead
-- Developer D Security + Testing & Documentation Engineer
+- Ian Andersen Smart Contract Lead
+- Jose Gonzalez Backend Lead
+- Juan Frontend Lead
 
 ## 
