@@ -37,10 +37,7 @@ export default function App() {
   const [noteRecordId, setNoteRecordId] = useState("note-diane-1");
   const [noteText, setNoteText] = useState("");
   const [fileToUpload, setFileToUpload] = useState(null);
-  const [notifications, setNotifications] = useState([
-    { id: 1, title: "Clinical note uploaded", time: "2m" },
-    { id: 2, title: "Dr. Lee shared labs", time: "1h" }
-  ]);
+  const [notifications, setNotifications] = useState([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
 
@@ -162,6 +159,53 @@ export default function App() {
     refreshPatientRecords();
   }, [refreshPatientRecords]);
 
+  const fetchNotifications = useCallback(
+    async (options = {}) => {
+      if (role === "PATIENT" || !address) {
+        setNotifications([]);
+        return;
+      }
+
+      const silent = Boolean(options.silent);
+
+      try {
+        const res = await axios.get(
+          `${API_BASE}/api/providers/${address}/notifications`
+        );
+        setNotifications(res.data.notifications || []);
+        if (!silent) {
+          logStatus(
+            `Loaded ${res.data.notifications?.length || 0} notifications.`
+          );
+        }
+      } catch (err) {
+        console.error(err);
+        if (!silent) {
+          logStatus("Failed to load notifications.");
+        }
+      }
+    },
+    [role, address, logStatus]
+  );
+
+  useEffect(() => {
+    let intervalId = null;
+
+    fetchNotifications({ silent: true });
+
+    if (role !== "PATIENT" && address) {
+      intervalId = window.setInterval(() => {
+        fetchNotifications({ silent: true });
+      }, 10000);
+    }
+
+    return () => {
+      if (intervalId) {
+        window.clearInterval(intervalId);
+      }
+    };
+  }, [fetchNotifications, role, address]);
+
   useEffect(() => {
     async function loadProviderRecords() {
       if (role === "PATIENT") {
@@ -265,6 +309,7 @@ export default function App() {
       await axios.post(`${API_BASE}/api/access/grant`, {
         recordIdHash: selectedRecord.recordIdHash,
         providerAddress: selectedProvider,
+        recordId: selectedRecord.recordId,
         validUntil: 0,
         scope: null
       });
@@ -309,17 +354,39 @@ export default function App() {
   }
 
   function handleNotificationsClick() {
-    setNotificationsOpen((open) => !open);
-    if (notifications.length === 0) {
-      logStatus("No notifications");
-    } else {
-      logStatus("Notifications shown");
-    }
+    setNotificationsOpen((open) => {
+      const next = !open;
+      if (next) {
+        fetchNotifications({ silent: true });
+        if (notifications.length === 0) {
+          logStatus("No notifications");
+        } else {
+          logStatus("Notifications shown");
+        }
+      } else {
+        logStatus("Notifications hidden");
+      }
+      return next;
+    });
   }
 
-  function dismissNotification(id) {
-    setNotifications((items) => items.filter((n) => n.id !== id));
-    logStatus("Notification dismissed");
+  async function handleClearNotifications() {
+    if (role === "PATIENT" || !address) {
+      setNotifications([]);
+      logStatus("Notifications cleared.");
+      return;
+    }
+
+    try {
+      await axios.post(
+        `${API_BASE}/api/providers/${address}/notifications/clear`
+      );
+      setNotifications([]);
+      logStatus("Notifications cleared.");
+    } catch (err) {
+      console.error(err);
+      logStatus("Failed to clear notifications.");
+    }
   }
 
   function handleRoleChange(e) {
@@ -362,15 +429,44 @@ export default function App() {
   }
 
   function getProviderLabel(addr) {
-    const idx = providers.indexOf(addr);
-    if (idx === -1) return addr;
-    const roleIndex = idx + 1;
-    const name = ROLES[roleIndex] || "PROVIDER";
+    if (!addr) return "Unknown provider";
+    const idx = findProviderIndex(addr);
     const short =
       addr && addr.startsWith("0x")
         ? `${addr.slice(0, 6)}...${addr.slice(-4)}`
         : addr;
+    if (idx === -1) {
+      return short;
+    }
+    const roleIndex = idx + 1;
+    const name = ROLES[roleIndex] || "PROVIDER";
     return `${name} (${short})`;
+  }
+
+  function findProviderIndex(addr) {
+    if (!addr) return -1;
+    const target = addr.toLowerCase();
+    return providers.findIndex((p) => (p || "").toLowerCase() === target);
+  }
+
+  function addressesEqual(a, b) {
+    if (!a || !b) return false;
+    return a.toLowerCase() === b.toLowerCase();
+  }
+
+  function getAccountFriendlyLabel(addr) {
+    if (!addr) return "Unknown";
+    const short = shortenMiddle(addr, 6, 4);
+    if (patientAddress && addressesEqual(addr, patientAddress)) {
+      return `PATIENT (${short})`;
+    }
+    const idx = findProviderIndex(addr);
+    if (idx !== -1) {
+      const roleIndex = idx + 1;
+      const name = ROLES[roleIndex] || "PROVIDER";
+      return `${name} (${short})`;
+    }
+    return short;
   }
 
   function shortenMiddle(str, front = 6, back = 4) {
@@ -384,6 +480,28 @@ export default function App() {
 
   function formatHash(hash) {
     return shortenMiddle(hash, 6, 6);
+  }
+
+  function renderNotificationText(notif) {
+    if (!notif) return "";
+    if (notif.type === "record-shared") {
+      const owner = notif.patientAddress
+        ? getAccountFriendlyLabel(notif.patientAddress)
+        : "A patient";
+      const recordLabel = notif.recordId || formatHash(notif.recordIdHash);
+      return `${owner} shared ${recordLabel}`;
+    }
+    return notif.message || "New activity";
+  }
+
+  function formatNotificationTime(ts) {
+    if (!ts) return "";
+    try {
+      return new Date(ts).toLocaleTimeString();
+    } catch (err) {
+      console.error(err);
+      return "";
+    }
   }
 
   return (
@@ -446,14 +564,7 @@ export default function App() {
                 <div className="notifications-menu">
                   <header>
                     <strong>Notifications</strong>
-                    <button
-                      onClick={() => {
-                        setNotifications([]);
-                        logStatus("All notifications cleared");
-                      }}
-                    >
-                      Clear all
-                    </button>
+                    <button onClick={handleClearNotifications}>Clear all</button>
                   </header>
                   {notifications.length === 0 ? (
                     <p className="muted">No new alerts</p>
@@ -462,10 +573,9 @@ export default function App() {
                       {notifications.map((n) => (
                         <li key={n.id}>
                           <div>
-                            <strong>{n.title}</strong>
-                            <span>{n.time} ago</span>
+                            <strong>{renderNotificationText(n)}</strong>
+                            <span>{formatNotificationTime(n.timestamp)}</span>
                           </div>
-                          <button onClick={() => dismissNotification(n.id)}>Dismiss</button>
                         </li>
                       ))}
                     </ul>
@@ -727,7 +837,7 @@ export default function App() {
                           <tr key={r.recordId}>
                             <td>{r.recordId}</td>
                             <td>
-                              <code title={r.owner}>{shortenMiddle(r.owner, 6, 4)}</code>
+                              <code title={r.owner}>{getAccountFriendlyLabel(r.owner)}</code>
                             </td>
                             <td>
                               {r.recordIdHash ? (

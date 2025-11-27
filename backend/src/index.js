@@ -2,6 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const morgan = require("morgan");
+const crypto = require("crypto");
 const { ethers } = require("ethers");
 const {
   generateSymmetricKey,
@@ -128,6 +129,29 @@ const PORT = process.env.PORT || 3333;
 
 // In-memory PoC store: recordId (string) -> { cid, owner, keyHex, recordIdHash }
 const localRecords = new Map();
+const providerNotifications = new Map();
+
+function pushProviderNotification(address, notification) {
+  if (!address) return;
+  const key = address.toLowerCase();
+  const existing = providerNotifications.get(key) || [];
+  const entry = {
+    id: crypto.randomUUID(),
+    timestamp: Date.now(),
+    ...notification
+  };
+  providerNotifications.set(key, [entry, ...existing].slice(0, 50));
+}
+
+function getProviderNotifications(address) {
+  if (!address) return [];
+  return providerNotifications.get(address.toLowerCase()) || [];
+}
+
+function clearProviderNotifications(address) {
+  if (!address) return;
+  providerNotifications.set(address.toLowerCase(), []);
+}
 
 app.get("/health", async (_req, res) => {
   try {
@@ -337,7 +361,8 @@ app.get("/api/patients/:patientAddress/records", async (req, res) => {
 // -----------------------------------------------------------------------------
 app.post("/api/access/grant", async (req, res) => {
   try {
-    const { recordIdHash, providerAddress, validUntil, scope } = req.body;
+    const { recordIdHash, providerAddress, validUntil, scope, recordId } =
+      req.body;
     if (!recordIdHash || !providerAddress) {
       return res
         .status(400)
@@ -357,6 +382,29 @@ app.post("/api/access/grant", async (req, res) => {
       scope || ethers.ZeroHash
     );
     await tx.wait();
+
+    let resolvedRecordId = recordId || null;
+    let patientAddress = null;
+
+    if (resolvedRecordId && localRecords.has(resolvedRecordId)) {
+      patientAddress = localRecords.get(resolvedRecordId)?.owner || null;
+    } else {
+      for (const [rid, meta] of localRecords.entries()) {
+        if (meta.recordIdHash && meta.recordIdHash === recordIdHash) {
+          resolvedRecordId = rid;
+          patientAddress = meta.owner || null;
+          break;
+        }
+      }
+    }
+
+    pushProviderNotification(providerAddress, {
+      type: "record-shared",
+      message: `New record shared: ${resolvedRecordId || recordIdHash}`,
+      recordId: resolvedRecordId,
+      recordIdHash,
+      patientAddress
+    });
 
     res.json({ ok: true });
   } catch (e) {
@@ -439,6 +487,36 @@ app.get("/api/providers/:providerAddress/records", async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "failed to list provider records" });
+  }
+});
+
+// -----------------------------------------------------------------------------
+// Provider notifications
+// -----------------------------------------------------------------------------
+app.get("/api/providers/:providerAddress/notifications", (req, res) => {
+  try {
+    const { providerAddress } = req.params;
+    if (!providerAddress) {
+      return res.status(400).json({ error: "providerAddress required" });
+    }
+    res.json({ notifications: getProviderNotifications(providerAddress) });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "failed to load notifications" });
+  }
+});
+
+app.post("/api/providers/:providerAddress/notifications/clear", (req, res) => {
+  try {
+    const { providerAddress } = req.params;
+    if (!providerAddress) {
+      return res.status(400).json({ error: "providerAddress required" });
+    }
+    clearProviderNotifications(providerAddress);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "failed to clear notifications" });
   }
 });
 
