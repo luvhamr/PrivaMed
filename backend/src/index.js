@@ -72,6 +72,7 @@ async function getContract(signerOrProvider) {
   return new ethers.Contract(addr, PRIVAMED_ABI, signerOrProvider);
 }
 
+
 // Robustly get a signer for the first Ganache account, whether listAccounts()
 // returns plain strings or objects with an .address field.
 async function getSigner() {
@@ -142,6 +143,7 @@ app.get("/health", async (_req, res) => {
     res.status(500).json({ ok: false, error: "health check failed" });
   }
 });
+
 
 // List Ganache accounts so the frontend can treat 0 as patient and others as providers
 app.get("/api/accounts", async (_req, res) => {
@@ -261,6 +263,7 @@ app.post("/api/records", async (req, res) => {
   }
 });
 
+
 // -----------------------------------------------------------------------------
 // Fetch a record (decrypt and return envelope: note or file)
 // -----------------------------------------------------------------------------
@@ -357,57 +360,6 @@ app.post("/api/access/revoke", async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "failed to revoke access" });
-  }
-});
-
-// -----------------------------------------------------------------------------
-// List records a provider has access to
-// GET /api/providers/:providerAddress/records
-// -----------------------------------------------------------------------------
-app.get("/api/providers/:providerAddress/records", async (req, res) => {
-  try {
-    const { providerAddress } = req.params;
-    if (!providerAddress) {
-      return res.status(400).json({ error: "providerAddress required" });
-    }
-
-    const contract = await getContract(provider); // read-only calls
-    const results = [];
-
-    for (const [recordId, meta] of localRecords.entries()) {
-      // If this record never got an on-chain ID, it can't participate in
-      // contract-based access control, so skip it for the provider view.
-      if (!meta.recordIdHash) continue;
-
-      let authorized = false;
-      try {
-        authorized = await contract.isAuthorized(
-          meta.recordIdHash,
-          providerAddress
-        );
-      } catch (err) {
-        console.error(
-          `[CHAIN] isAuthorized failed for record ${recordId} / provider ${providerAddress}:`,
-          err
-        );
-        // In a demo context, we just treat failure as "not authorized"
-        authorized = false;
-      }
-
-      if (authorized) {
-        results.push({
-          recordId,
-          cid: meta.cid,
-          recordIdHash: meta.recordIdHash,
-          owner: meta.owner
-        });
-      }
-    }
-
-    res.json({ records: results });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: "failed to list provider records" });
   }
 });
 

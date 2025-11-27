@@ -2,23 +2,9 @@ import React, { useMemo, useState, useEffect } from "react";
 import axios from "axios";
 import "./App.css";
 import bgPattern from "./assets/privamed-bg.svg";
-import FileViewerModal from "./components/FileViewerModal";
 
 const API_BASE = process.env.REACT_APP_BACKEND_URL || "http://localhost:3333";
-
-// 1 patient + 9 named provider entities
-const ROLES = [
-  "PATIENT",
-  "KAISER",
-  "SUTTER_HEALTH",
-  "MERCY_MEDICAL",
-  "UC_DAVIS_HEALTH",
-  "STANFORD_HEALTH",
-  "MAYO_CLINIC",
-  "CEDARS_SINAI",
-  "DIGNITY_HEALTH",
-  "ADVENTIST_HEALTH"
-];
+const ROLES = ["PATIENT", "PHYSICIAN", "RESPONDER", "AUDITOR"];
 
 const NAV_ITEMS = [
   { label: "Overview" },
@@ -58,8 +44,8 @@ export default function App() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [noteRecordId, setNoteRecordId] = useState("note-diane-1");
   const [noteText, setNoteText] = useState("");
-  const [fileToUpload, setFileToUpload] = useState(null);
-  const [activeNav, setActiveNav] = useState("Patient List");
+const [fileToUpload, setFileToUpload] = useState(null);
+const [activeNav, setActiveNav] = useState("Patient List");
 
   const [activeTab, setActiveTab] = useState("upcoming");
   const [notifications, setNotifications] = useState([
@@ -69,18 +55,12 @@ export default function App() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
 
-  // Access page state
+  // New state for Access page
   const [patientAddress, setPatientAddress] = useState("");
-  const [providers, setProviders] = useState([]); // addresses: accounts[1..9]
+  const [providers, setProviders] = useState([]);
   const [records, setRecords] = useState([]);
   const [selectedRecordId, setSelectedRecordId] = useState("");
   const [selectedProvider, setSelectedProvider] = useState("");
-
-  // Provider view: records visible to current provider role
-  const [providerRecords, setProviderRecords] = useState([]);
-
-  // Shared viewer state
-  const [viewingRecord, setViewingRecord] = useState(null);
 
   const canUpload = useMemo(() => role === "PATIENT" && address, [role, address]);
   const signedIn = Boolean(address);
@@ -103,6 +83,7 @@ export default function App() {
   );
 
   // Load accounts from backend: account 0 = patient, others = providers
+    // Load accounts from backend: account 0 = patient, others = providers
   useEffect(() => {
     let cancelled = false;
 
@@ -115,7 +96,7 @@ export default function App() {
         if (accounts.length > 0) {
           setPatientAddress(accounts[0]);
           setAddress(accounts[0]); // keep "signed-in" address in sync
-          const provs = accounts.slice(1); // remaining 9 addresses
+          const provs = accounts.slice(1);
           setProviders(provs);
           if (provs.length > 0) {
             setSelectedProvider(provs[0]);
@@ -137,31 +118,8 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [API_BASE]);
 
-  // Load provider-visible records when role/address change
-  useEffect(() => {
-    async function loadProviderRecords() {
-      if (role === "PATIENT") {
-        setProviderRecords([]);
-        return;
-      }
-      if (!address) return;
-
-      try {
-        const res = await axios.get(`${API_BASE}/api/providers/${address}/records`);
-        setProviderRecords(res.data.records || []);
-        setStatus(
-          `Loaded ${res.data.records?.length || 0} records for provider ${address}`
-        );
-      } catch (err) {
-        console.error(err);
-        setStatus("Failed to load provider records.");
-      }
-    }
-
-    loadProviderRecords();
-  }, [role, address]);
 
   // Existing Notes-card upload (Save & Encrypt)
   async function uploadRecord() {
@@ -190,72 +148,73 @@ export default function App() {
   }
 
   function fileToBase64(file) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result || "";
-        // result looks like "data:application/pdf;base64,AAAA..."
-        const [, base64] = result.split(",");
-        resolve(base64 || "");
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result || "";
+      // result looks like "data:application/pdf;base64,AAAA..."
+      const [, base64] = result.split(",");
+      resolve(base64 || "");
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
   // === Access page handlers ===
   async function handleAccessUpload(e) {
-    e.preventDefault();
+  e.preventDefault();
 
-    if (!patientAddress) {
-      setStatus("No patient address loaded yet.");
-      return;
-    }
-    if (!noteRecordId.trim() && !fileToUpload) {
-      setStatus("Record ID is required when uploading.");
-      return;
-    }
-    if (!noteText.trim() && !fileToUpload) {
-      setStatus("Either note text or a file is required.");
-      return;
-    }
-
-    try {
-      setStatus("Uploading encrypted record...");
-
-      let fileMeta = null;
-      if (fileToUpload) {
-        const base64 = await fileToBase64(fileToUpload);
-        fileMeta = {
-          name: fileToUpload.name,
-          type: fileToUpload.type,
-          size: fileToUpload.size,
-          base64
-        };
-      }
-
-      const res = await axios.post(`${API_BASE}/api/records`, {
-        patientAddress,
-        recordId: noteRecordId,
-        plaintext: noteText,
-        fileMeta
-      });
-
-      const newRecord = {
-        recordId: res.data.recordId,
-        cid: res.data.cid,
-        recordIdHash: res.data.recordIdHash
-      };
-
-      setRecords((prev) => [...prev, newRecord]);
-      setSelectedRecordId(newRecord.recordId);
-      setFileToUpload(null);
-      setStatus("Record stored and registered on-chain.");
-    } catch (err) {
-      console.error(err);
-      setStatus("Failed to upload record.");
-    }
+  if (!patientAddress) {
+    setStatus("No patient address loaded yet.");
+    return;
   }
+  if (!noteRecordId.trim() && !fileToUpload) {
+    setStatus("Record ID is required when uploading.");
+    return;
+  }
+  if (!noteText.trim() && !fileToUpload) {
+    setStatus("Either note text or a file is required.");
+    return;
+  }
+
+  try {
+    setStatus("Uploading encrypted record...");
+
+    let fileMeta = null;
+    if (fileToUpload) {
+      const base64 = await fileToBase64(fileToUpload);
+      fileMeta = {
+        name: fileToUpload.name,
+        type: fileToUpload.type,
+        size: fileToUpload.size,
+        base64
+      };
+    }
+
+    const res = await axios.post(`${API_BASE}/api/records`, {
+      patientAddress,
+      recordId: noteRecordId,
+      plaintext: noteText,
+      fileMeta
+    });
+
+    const newRecord = {
+      recordId: res.data.recordId,
+      cid: res.data.cid,
+      recordIdHash: res.data.recordIdHash
+    };
+
+    setRecords((prev) => [...prev, newRecord]);
+    setSelectedRecordId(newRecord.recordId);
+    setFileToUpload(null);
+    setStatus("Record stored and registered on-chain.");
+  } catch (err) {
+    console.error(err);
+    setStatus("Failed to upload record.");
+  }
+}
+
 
   async function handleGrantAccess(e) {
     e.preventDefault();
@@ -350,75 +309,6 @@ export default function App() {
     setStatus("Notification dismissed");
   }
 
-  // Role dropdown: map roles to actual addresses
-  function handleRoleChange(e) {
-    const newRole = e.target.value;
-    setRole(newRole);
-
-    // PATIENT always maps to first Ganache account
-    if (newRole === "PATIENT") {
-      if (patientAddress) {
-        setAddress(patientAddress);
-        setStatus(`Switched to PATIENT at ${patientAddress}`);
-      } else {
-        setStatus("No patient address loaded yet.");
-      }
-      return;
-    }
-
-    // All other roles map to providers[0..8] which are accounts[1..9]
-    const roleIndex = ROLES.indexOf(newRole); // 1..9 for providers
-    const providerIndex = roleIndex - 1; // KAISER → 0, SUTTER → 1, ...
-
-    if (!providers.length || providerIndex < 0 || providerIndex >= providers.length) {
-      setStatus("Provider address not available in Ganache.");
-      return;
-    }
-
-    const addr = providers[providerIndex];
-    setAddress(addr);
-    setStatus(`Switched to ${newRole} at ${addr}`);
-  }
-
-  // Viewer handler: fetch decrypted record payload
-  async function openRecordViewer(recordId) {
-    try {
-      setStatus("Loading record...");
-      const res = await axios.get(`${API_BASE}/api/records/${recordId}`);
-      setViewingRecord(res.data); // { recordId, payload, cid, recordIdHash }
-      setStatus("Record loaded.");
-    } catch (err) {
-      console.error(err);
-      setStatus("Failed to load record");
-    }
-  }
-
-  // Helper: get a friendly provider label for a given provider address
-  function getProviderLabel(addr) {
-    const idx = providers.indexOf(addr);
-    if (idx === -1) return addr;
-    const roleIndex = idx + 1; // ROLES[1..9] are providers
-    const name = ROLES[roleIndex] || "PROVIDER";
-    const short =
-      addr && addr.startsWith("0x")
-        ? `${addr.slice(0, 6)}...${addr.slice(-4)}`
-        : addr;
-    return `${name} (${short})`;
-  }
-
-  function shortenMiddle(str, front = 6, back = 4) {
-    if (!str || str.length <= front + back + 3) return str;
-    return `${str.slice(0, front)}...${str.slice(-back)}`;
-  }
-
-  function formatCid(cid) {
-    return shortenMiddle(cid, 8, 6);
-  }
-
-  function formatHash(hash) {
-    return shortenMiddle(hash, 6, 6);
-  }
-
   const timelineData =
     activeTab === "past"
       ? [
@@ -460,11 +350,9 @@ export default function App() {
         </nav>
         <div className="role-box">
           <label>Role</label>
-          <select value={role} onChange={handleRoleChange}>
+          <select value={role} onChange={(e) => setRole(e.target.value)}>
             {ROLES.map((r) => (
-              <option key={r} value={r}>
-                {r}
-              </option>
+              <option key={r}>{r}</option>
             ))}
           </select>
         </div>
@@ -576,266 +464,157 @@ export default function App() {
           // ACCESS PAGE
           // ==========================
           <section className="overview-grid">
-            {role === "PATIENT" ? (
-              <>
-                {/* PATIENT VIEW */}
-                <div className="card patient-card">
-                  <div className="patient-header">
-                    <div className="patient-avatar blank-avatar" aria-hidden="true">
-                      AC
-                    </div>
-                    <div>
-                      <h2>Access Control</h2>
-                      <p>
-                        Patient:{" "}
-                        <code>{patientAddress || "Loading accounts from Ganache..."}</code>
-                      </p>
-                    </div>
-                  </div>
-
-                  <form className="access-form" onSubmit={handleAccessUpload}>
-                    <h3>Upload medical record</h3>
-
-                    <label className="field">
-                      <span>Record ID</span>
-                      <input
-                        type="text"
-                        value={noteRecordId}
-                        onChange={(e) => setNoteRecordId(e.target.value)}
-                        placeholder="e.g. note-001"
-                      />
-                    </label>
-
-                    <label className="field">
-                      <span>Note text</span>
-                      <textarea
-                        rows={4}
-                        value={noteText}
-                        onChange={(e) => setNoteText(e.target.value)}
-                        placeholder="Paste or type the clinical note..."
-                      />
-                    </label>
-
-                    <label className="field">
-                      <span>Attach file (optional)</span>
-                      <input
-                        type="file"
-                        onChange={(e) => {
-                          const file = e.target.files && e.target.files[0];
-                          setFileToUpload(file || null);
-                        }}
-                      />
-                      {fileToUpload && (
-                        <small>
-                          Selected: {fileToUpload.name} (
-                          {Math.round(fileToUpload.size / 1024)} KB)
-                        </small>
-                      )}
-                    </label>
-
-                    <button type="submit" className="btn-primary">
-                      Upload & register on-chain
-                    </button>
-                  </form>
-
-                  <div className="records-list">
-                    <h3>Records</h3>
-                    {records.length === 0 ? (
-                      <p>No records yet. Upload one above.</p>
-                    ) : (
-                      <table className="simple-table">
-                        <thead>
-                          <tr>
-                            <th>Record ID</th>
-                            <th>CID</th>
-                            <th>On-chain ID</th>
-                            <th>View</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {records.map((r) => (
-                            <tr
-                              key={r.recordId}
-                              onClick={() => setSelectedRecordId(r.recordId)}
-                              style={{
-                                cursor: "pointer",
-                                background:
-                                  selectedRecordId === r.recordId
-                                    ? "rgba(0,0,0,0.04)"
-                                    : "transparent"
-                              }}
-                            >
-                              <td>{r.recordId}</td>
-                              <td>
-                                {r.cid ? (
-                                  <code title={r.cid}>{formatCid(r.cid)}</code>
-                                ) : (
-                                   "—"
-                                )}
-                              </td>
-                              <td>
-                                {r.recordIdHash ? (
-                                  <code title={r.recordIdHash}>{formatHash(r.recordIdHash)}</code>
-                                ) : (
-                                  "pending"
-                                )}
-                              </td>
-                              <td>
-                                <button
-                                  type="button"
-                                  className="btn-primary"
-                                  style={{ marginTop: 0, padding: "6px 10px" }}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openRecordViewer(r.recordId);
-                                  }}
-                                >
-                                  View
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
+            <div className="card patient-card">
+              <div className="patient-header">
+                <div className="patient-avatar blank-avatar" aria-hidden="true">
+                  AC
                 </div>
-
-                <div className="card notes-card">
-                  <h3>Grant / revoke provider access</h3>
-                  <form className="access-form" onSubmit={handleGrantAccess}>
-                    <label className="field">
-                      <span>Selected record</span>
-                      <input
-                        type="text"
-                        value={selectedRecordId || ""}
-                        readOnly
-                        placeholder="Click a record in the table on the left"
-                      />
-                    </label>
-
-                    <label className="field">
-                      <span>Provider</span>
-                      <select
-                        value={selectedProvider}
-                        onChange={(e) => setSelectedProvider(e.target.value)}
-                      >
-                        <option value="">Select a provider</option>
-                        {providers.map((p) => (
-                          <option key={p} value={p}>
-                            {getProviderLabel(p)}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-
-                    <div className="actions">
-                      <button type="submit" className="btn-primary">
-                        Grant access
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-primary"
-                        onClick={handleRevokeAccess}
-                      >
-                        Revoke access
-                      </button>
-                    </div>
-                  </form>
+                <div>
+                  <h2>Access Control</h2>
+                  <p>
+                    Patient:{" "}
+                    <code>{patientAddress || "Loading accounts from Ganache..."}</code>
+                  </p>
                 </div>
+              </div>
 
-                <div className="card status-card">
-                  <h3>Status</h3>
-                  <p>{status}</p>
-                  <div className="role-info">
-                    <span>Role</span>
-                    <strong>{role}</strong>
-                  </div>
-                  <div className="role-info">
-                    <span>Address</span>
-                    <code>{address || "Not set"}</code>
-                  </div>
+              <form className="access-form" onSubmit={handleAccessUpload}>
+  <h3>Upload medical record</h3>
+
+  <label className="field">
+    <span>Record ID</span>
+    <input
+      type="text"
+      value={noteRecordId}
+      onChange={(e) => setNoteRecordId(e.target.value)}
+      placeholder="e.g. note-001"
+    />
+  </label>
+
+  <label className="field">
+    <span>Note text</span>
+    <textarea
+      rows={4}
+      value={noteText}
+      onChange={(e) => setNoteText(e.target.value)}
+      placeholder="Paste or type the clinical note..."
+    />
+  </label>
+
+  <label className="field">
+    <span>Attach file (optional)</span>
+    <input
+      type="file"
+      onChange={(e) => {
+        const file = e.target.files && e.target.files[0];
+        setFileToUpload(file || null);
+      }}
+    />
+    {fileToUpload && (
+      <small>
+        Selected: {fileToUpload.name} ({Math.round(fileToUpload.size / 1024)} KB)
+      </small>
+    )}
+  </label>
+
+  <button type="submit" className="btn-primary">
+    Upload & register on-chain
+  </button>
+</form>
+
+
+              <div className="records-list">
+                <h3>Records</h3>
+                {records.length === 0 ? (
+                  <p>No records yet. Upload one above.</p>
+                ) : (
+                  <table className="simple-table">
+                    <thead>
+                      <tr>
+                        <th>Record ID</th>
+                        <th>CID</th>
+                        <th>On-chain ID</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {records.map((r) => (
+                        <tr
+                          key={r.recordId}
+                          onClick={() => setSelectedRecordId(r.recordId)}
+                          style={{
+                            cursor: "pointer",
+                            background:
+                              selectedRecordId === r.recordId
+                                ? "rgba(0,0,0,0.04)"
+                                : "transparent"
+                          }}
+                        >
+                          <td>{r.recordId}</td>
+                          <td>{r.cid}</td>
+                          <td>{r.recordIdHash || "pending"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            <div className="card notes-card">
+              <h3>Grant / revoke provider access</h3>
+              <form className="access-form" onSubmit={handleGrantAccess}>
+                <label className="field">
+                  <span>Selected record</span>
+                  <input
+                    type="text"
+                    value={selectedRecordId || ""}
+                    readOnly
+                    placeholder="Click a record in the table on the left"
+                  />
+                </label>
+
+                <label className="field">
+                  <span>Provider address</span>
+                  <select
+                    value={selectedProvider}
+                    onChange={(e) => setSelectedProvider(e.target.value)}
+                  >
+                    <option value="">Select a provider</option>
+                    {providers.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div className="actions">
+                  <button type="submit" className="btn-primary">
+                    Grant access
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={handleRevokeAccess}
+                  >
+                    Revoke access
+                  </button>
                 </div>
-              </>
-            ) : (
-              <>
-                {/* PROVIDER VIEW */}
-                <div className="card patient-card">
-                  <div className="patient-header">
-                    <div className="patient-avatar blank-avatar" aria-hidden="true">
-                      PR
-                    </div>
-                    <div>
-                      <h2>Provider View</h2>
-                      <p>
-                        Role: {role} · Address: <code>{address}</code>
-                      </p>
-                    </div>
-                  </div>
+              </form>
+            </div>
 
-                  <div className="records-list">
-                    <h3>Records shared with you</h3>
-                    {providerRecords.length === 0 ? (
-                      <p>No records have been shared with this provider yet.</p>
-                    ) : (
-                      <table className="simple-table">
-                        <thead>
-                          <tr>
-                            <th>Record ID</th>
-                            <th>Owner (patient)</th>
-                            <th>On-chain ID</th>
-                            <th>View</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {providerRecords.map((r) => (
-                            <tr key={r.recordId}>
-                              <td>{r.recordId}</td>
-                              <td>
-                                <code title={r.owner}>
-                                  {shortenMiddle(r.owner, 6, 4)}
-                                </code>
-                              </td>
-                              <td>
-                                {r.recordIdHash ? (
-                                  <code title={r.recordIdHash}>{formatHash(r.recordIdHash)}</code>
-                                ) : (
-                                  "n/a"
-                                )}
-                              </td>
-
-                              <td>
-                                <button
-                                  type="button"
-                                  className="btn-primary"
-                                  style={{ marginTop: 0, padding: "6px 10px" }}
-                                  onClick={() => openRecordViewer(r.recordId)}
-                                >
-                                  View
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
-                </div>
-
-                <div className="card status-card">
-                  <h3>Status</h3>
-                  <p>{status}</p>
-                  <div className="role-info">
-                    <span>Role</span>
-                    <strong>{role}</strong>
-                  </div>
-                  <div className="role-info">
-                    <span>Address</span>
-                    <code>{address || "Not set"}</code>
-                  </div>
-                </div>
-              </>
-            )}
+            <div className="card status-card">
+              <h3>Status</h3>
+              <p>{status}</p>
+              <div className="role-info">
+                <span>Role</span>
+                <strong>{role}</strong>
+              </div>
+              <div className="role-info">
+                <span>Address</span>
+                <code>{address || "Not set"}</code>
+              </div>
+            </div>
           </section>
         ) : (
           // ==========================
@@ -967,10 +746,6 @@ export default function App() {
           </>
         )}
       </div>
-
-      {viewingRecord && (
-        <FileViewerModal record={viewingRecord} onClose={() => setViewingRecord(null)} />
-      )}
     </div>
   );
 }
