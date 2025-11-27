@@ -16,6 +16,7 @@ body, html, #root {
   background: var(--bg);
   color: #0f172a;
 }
+.muted { color: var(--text-muted); }
 .shell { min-height: 100vh; display: flex; }
 
 .sidebar {
@@ -160,6 +161,9 @@ body, html, #root {
 .btn-primary:hover { transform: translateY(-1px); }
 .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
 
+.records-list { margin-top: 24px; }
+.records-list h3 { margin-top: 0; margin-bottom: 12px; }
+
 .files-card ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 12px; }
 .files-card li { display: flex; justify-content: space-between; align-items: center; border: 1px solid rgba(148,163,184,0.35); border-radius: 12px; padding: 12px; background: rgba(255,255,255,0.95); }
 .files-card li span { display: block; color: var(--text-muted); font-size: 0.8rem; }
@@ -177,6 +181,74 @@ body, html, #root {
 .status-card p { margin-top: 0; color: var(--text-muted); }
 .role-info { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
 .role-info code { font-size: 0.85rem; }
+
+.simple-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.simple-table th,
+.simple-table td {
+  text-align: left;
+  padding: 10px 8px;
+  border-bottom: 1px solid rgba(148,163,184,0.35);
+}
+
+.simple-table th {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.console-footer {
+  background: var(--card);
+  border-radius: 18px;
+  padding: 16px 20px;
+  border: 1px solid var(--border);
+  box-shadow: 0 12px 30px rgba(15,23,42,0.12);
+}
+
+.console-footer-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9rem;
+  margin-bottom: 10px;
+}
+
+.console-log-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.console-log-list li {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 6px 8px;
+  border-radius: 10px;
+  background: rgba(15,23,42,0.03);
+}
+
+.console-log-time {
+  min-width: 72px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.console-log-message {
+  flex: 1;
+  font-size: 0.85rem;
+}
 
 @media (max-width: 1200px) {
   .overview-grid { grid-template-columns: 1fr; }
