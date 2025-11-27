@@ -301,6 +301,37 @@ app.get("/api/records/:recordId", async (req, res) => {
 });
 
 // -----------------------------------------------------------------------------
+// List records owned by a specific patient (off-chain metadata only)
+// -----------------------------------------------------------------------------
+app.get("/api/patients/:patientAddress/records", async (req, res) => {
+  try {
+    const { patientAddress } = req.params;
+    if (!patientAddress) {
+      return res.status(400).json({ error: "patientAddress required" });
+    }
+
+    const target = patientAddress.toLowerCase();
+    const records = [];
+
+    for (const [recordId, meta] of localRecords.entries()) {
+      if (!meta.owner) continue;
+      if (meta.owner.toLowerCase() !== target) continue;
+      records.push({
+        recordId,
+        cid: meta.cid,
+        recordIdHash: meta.recordIdHash,
+        owner: meta.owner
+      });
+    }
+
+    res.json({ records });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "failed to list patient records" });
+  }
+});
+
+// -----------------------------------------------------------------------------
 // Grant access to a provider
 // Body: { recordIdHash, providerAddress, validUntil?, scope? }
 // -----------------------------------------------------------------------------
