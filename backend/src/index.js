@@ -130,6 +130,7 @@ const PORT = process.env.PORT || 3333;
 // In-memory PoC store: recordId (string) -> { cid, owner, keyHex, recordIdHash }
 const localRecords = new Map();
 const providerNotifications = new Map();
+const chainLogs = [];
 
 function pushProviderNotification(address, notification) {
   if (!address) return;
@@ -151,6 +152,50 @@ function getProviderNotifications(address) {
 function clearProviderNotifications(address) {
   if (!address) return;
   providerNotifications.set(address.toLowerCase(), []);
+}
+
+async function appendChainLog(label, receipt) {
+  if (!receipt) return;
+  try {
+    let blockTime = null;
+    if (receipt.blockNumber !== undefined && receipt.blockNumber !== null) {
+      try {
+        const block = await provider.getBlock(receipt.blockNumber);
+        if (block && block.timestamp !== undefined) {
+          const ts = Number(block.timestamp) * 1000;
+          blockTime = Number.isNaN(ts) ? null : new Date(ts).toISOString();
+        }
+      } catch (err) {
+        console.error("[LOG] Failed to fetch block for log entry", err);
+      }
+    }
+
+    const entry = {
+      id: crypto.randomUUID(),
+      timestamp: Date.now(),
+      label,
+      txHash:
+        receipt.hash ||
+        receipt.transactionHash ||
+        receipt.logs?.[0]?.transactionHash ||
+        null,
+      gasUsed: receipt.gasUsed ? receipt.gasUsed.toString() : null,
+      blockNumber:
+        receipt.blockNumber !== undefined ? Number(receipt.blockNumber) : null,
+      blockTime
+    };
+
+    chainLogs.unshift(entry);
+    if (chainLogs.length > 100) {
+      chainLogs.length = 100;
+    }
+  } catch (err) {
+    console.error("[LOG] Failed to append chain log entry", err);
+  }
+}
+
+function clearChainLogs() {
+  chainLogs.length = 0;
 }
 
 app.get("/health", async (_req, res) => {
@@ -252,6 +297,11 @@ app.post("/api/records", async (req, res) => {
       // addRecord will now accept msg.sender as Auditor OR Patient
       const tx = await contract.addRecord(cid);
       const receipt = await tx.wait();
+
+      await appendChainLog(
+        `Record registered${recordId ? ` (${recordId})` : ""}`,
+        receipt
+      );
 
       // parse logs to find recordId (from RecordAdded event)
       for (const log of receipt.logs) {
@@ -381,7 +431,7 @@ app.post("/api/access/grant", async (req, res) => {
       validUntil || 0,
       scope || ethers.ZeroHash
     );
-    await tx.wait();
+    const receipt = await tx.wait();
 
     let resolvedRecordId = recordId || null;
     let patientAddress = null;
@@ -405,6 +455,11 @@ app.post("/api/access/grant", async (req, res) => {
       recordIdHash,
       patientAddress
     });
+
+    await appendChainLog(
+      `Access granted to ${providerAddress}`,
+      receipt
+    );
 
     res.json({ ok: true });
   } catch (e) {
@@ -430,7 +485,12 @@ app.post("/api/access/revoke", async (req, res) => {
     const contract = await getContract(signer);
 
     const tx = await contract.revokeAccess(recordIdHash, providerAddress);
-    await tx.wait();
+    const receipt = await tx.wait();
+
+    await appendChainLog(
+      `Access revoked for ${providerAddress}`,
+      receipt
+    );
 
     res.json({ ok: true });
   } catch (e) {
@@ -518,6 +578,18 @@ app.post("/api/providers/:providerAddress/notifications/clear", (req, res) => {
     console.error(e);
     res.status(500).json({ error: "failed to clear notifications" });
   }
+});
+
+// -----------------------------------------------------------------------------
+// Chain log surface (advanced console)
+// -----------------------------------------------------------------------------
+app.get("/api/logs", (_req, res) => {
+  res.json({ logs: chainLogs });
+});
+
+app.post("/api/logs/clear", (_req, res) => {
+  clearChainLogs();
+  res.json({ ok: true });
 });
 
 // -----------------------------------------------------------------------------
