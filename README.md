@@ -1,5 +1,5 @@
 # PrivaMed
-A privacy-focused decentralized application (DApp) empowering patients to control access to their medical records while ensuring data integrity and secure interoperability.
+A privacy-focused decentralized application (DApp) empowering patients to control access to their medical records while ensuring data integrity and secure interoperability. A React client talks to an Express REST API that performs encryption, IPFS storage, and Ethereum interactions via ethers.js.
 
 ## 🚀 Project Overview
 PrivaMed enables patients to:
@@ -13,14 +13,16 @@ _This project is a proof-of-concept operating on a local blockchain test network
 ---
 
 ## 🧱 Technology Stack
-|       Layer        |         Technology        |
-|--------------------|---------------------------|
-| Smart Contracts    | Solidity, Truffle         |
-| Blockchain Network | Ganache local testnet     |
-| Frontend           | React + Web3.js           |
-| Storage            | IPFS + AES-GCM encryption |
-| Testing            | Truffle, Mocha/Chai       |
-| Wallet Integration | Ganache RPC               |
+|       Layer        |                     Technology                     |
+|--------------------|----------------------------------------------------|
+| Smart Contracts    | Solidity, Truffle                                  |
+| Blockchain Network | Ganache local testnet                              |
+| Backend API        | Node.js, Express, ethers.js                        |
+| Frontend           | React + Axios REST client                          |
+| Storage            | IPFS + AES-GCM encryption                          |
+| Observability      | Provider notifications, advanced chain log console |
+| Testing            | Truffle, Mocha/Chai                                |
+| Wallet Integration | Ganache RPC (via backend signer)                   |
 
 ---
 
@@ -58,10 +60,11 @@ npm start
 ```
 
 ## 📂 Project Architecture
-- Contracts define access control and record indexing.
-- Encrypted medical files are stored off-chain in IPFS.
-- Frontend communicates via Web3.js with smart contracts deployed on Ganache.
-- Patients control permissions through the UI.
+- Contracts define access control and record indexing and are invoked from the backend via ethers.js.
+- Encrypted medical files are stored off-chain in IPFS and keyed per record using AES-GCM.
+- Frontend talks to the backend REST API (accounts, records, access grants, logs) and never handles private keys directly.
+- Provider notifications and an advanced chain log console keep clinicians informed about newly shared records and recent transactions.
+- Patients control permissions through the UI while the backend enforces sharing policies.
 
 ## 🧪 Testing
 To execute smart contract tests:

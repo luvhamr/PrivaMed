@@ -44,7 +44,7 @@ Four developers are assigned explicit roles with primary responsibilities and me
 2. **Backend Developer — “Dev02”**
    **Primary responsibilities**
 
-   * Implement Node.js/TypeScript backend that interfaces with smart contracts (ethers.js/web3), performs key management, and mediates off-chain encrypted storage.
+    * Implement Node.js/TypeScript backend that interfaces with smart contracts via ethers.js, performs key management, and mediates off-chain encrypted storage.
    * Integrate local IPFS or encrypted filesystem for PHI, implement encryption/decryption services (AES-GCM or AES-256).
    * Implement server-side verification of access rights and audit event submission.
      **Deliverables**
@@ -214,7 +214,8 @@ Post-hoc: Audit officer retrieves emergency events and reviews justifications
 - **Truffle Suite** for contract compilation, automated testing, and migrations
 - **Ganache** for local Ethereum blockchain with deterministic accounts and GUI-based state inspection
 - **Solidity** (0.8.x recommended) with OpenZeppelin libraries for secure access-control primitives
-- **Web3.js** for blockchain interaction in backend and frontend
+- **Node.js + Express REST API** to encapsulate IPFS storage, encryption, notification feeds, and blockchain calls
+- **ethers.js** for blockchain interaction from the backend service
 - **React** (Vite or Create React App) for the user interface
 - **IPFS** (local go-ipfs node) for off-chain encrypted health record storage
 - **AES-GCM encryption** for Protected Health Information (PHI) confidentiality (via Node.js crypto API or audited libraries)
@@ -262,7 +263,7 @@ npm run start:backend
 
 8. Configure MetaMask to point to Ganache’s RPC endpoint (default: [http://127.0.0.1:8545](http://127.0.0.1:8545/)), import a provided Ganache account, and verify connection.
 ## 4.2 Component communication
-* **Frontend ↔ Backend:** REST/GraphQL over HTTPS (or HTTP for local PoC). The frontend uses MetaMask or a local signer to sign transactions for contract interactions where appropriate. For privacy, UI does not display raw private keys.
+* **Frontend ↔ Backend:** REST over HTTPS (or HTTP for local PoC). The frontend relies on the backend REST API for accounts, records, provider notifications, advanced chain logs, and access control. MetaMask/local signers can still be used for demo transactions, but the default flow keeps private keys server-side.
 
 * **Backend ↔ Smart Contract:** `ethers.js` provider connected to local Hardhat/Ganache node. Backend will sign only administrative operations (deploy, log events on behalf of verified servers). For user-driven operations requiring cryptographic proof, the frontend may send signed transactions directly.
 
@@ -309,7 +310,13 @@ Minimal, focused UI components to show core functionality:
    * Show contract addresses, transaction hashes, and local gas usage per operation (Hardhat gas reporter output).
 
 8. **Key Management Panel (PoC simplified)**
-   * Show how symmetric keys are wrapped/unwrapped and assigned to grantees (represents KMS flows).
+  * Show how symmetric keys are wrapped/unwrapped and assigned to grantees (represents KMS flows).
+
+9. **Provider Notification Center**
+  * Surface real-time notifications (new shares, revocations) sourced from the backend in-memory feed so clinicians can react quickly.
+
+10. **Advanced Chain Log Console**
+  * Display recent transaction receipts, gas usage, and timestamps pulled from the backend `/api/logs` endpoint for troubleshooting and demos.
 
 UX constraints: keep UI minimal and clearly label that all data is test data and not production PHI.
 

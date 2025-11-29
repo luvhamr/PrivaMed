@@ -40,6 +40,9 @@ export default function App() {
   const [notifications, setNotifications] = useState([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [searchValue, setSearchValue] = useState("");
+  const [showAdvancedLogs, setShowAdvancedLogs] = useState(false);
+  const [chainLogs, setChainLogs] = useState([]);
+  const [chainLogsLoading, setChainLogsLoading] = useState(false);
 
   const [patientAddress, setPatientAddress] = useState("");
   const [providers, setProviders] = useState([]);
@@ -205,6 +208,46 @@ export default function App() {
       }
     };
   }, [fetchNotifications, role, address]);
+
+  const fetchChainLogs = useCallback(
+    async (options = {}) => {
+      const silent = Boolean(options.silent);
+      setChainLogsLoading(true);
+
+      try {
+        const res = await axios.get(`${API_BASE}/api/logs`);
+        setChainLogs(res.data.logs || []);
+        if (!silent) {
+          logStatus(
+            `Loaded ${res.data.logs?.length || 0} advanced chain logs.`
+          );
+        }
+      } catch (err) {
+        console.error(err);
+        if (!silent) {
+          logStatus("Failed to load chain logs.");
+        }
+      } finally {
+        setChainLogsLoading(false);
+      }
+    },
+    [logStatus]
+  );
+
+  useEffect(() => {
+    if (!showAdvancedLogs) {
+      return undefined;
+    }
+
+    fetchChainLogs({ silent: true });
+    const intervalId = window.setInterval(() => {
+      fetchChainLogs({ silent: true });
+    }, 8000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [showAdvancedLogs, fetchChainLogs]);
 
   useEffect(() => {
     async function loadProviderRecords() {
@@ -389,6 +432,19 @@ export default function App() {
     }
   }
 
+  function toggleAdvancedLogs() {
+    setShowAdvancedLogs((prev) => {
+      const next = !prev;
+      if (next) {
+        fetchChainLogs({ silent: true });
+        logStatus("Advanced logs enabled");
+      } else {
+        logStatus("Advanced logs hidden");
+      }
+      return next;
+    });
+  }
+
   function handleRoleChange(e) {
     const newRole = e.target.value;
     setRole(newRole);
@@ -502,6 +558,88 @@ export default function App() {
       console.error(err);
       return "";
     }
+  }
+
+  function formatDateTime(value) {
+    if (!value) return "";
+    try {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) {
+        return "";
+      }
+      return date.toLocaleString();
+    } catch (err) {
+      console.error(err);
+      return "";
+    }
+  }
+
+  function renderStatusLogs() {
+    if (statusLog.length === 0) {
+      return <p className="muted">No log entries yet.</p>;
+    }
+
+    return (
+      <ul className="console-log-list">
+        {statusLog.map((entry) => (
+          <li key={entry.id}>
+            <span className="console-log-time">{entry.timestamp}</span>
+            <span className="console-log-message">{entry.message}</span>
+          </li>
+        ))}
+      </ul>
+    );
+  }
+
+  function renderChainLogs() {
+    if (chainLogsLoading && !chainLogs.length) {
+      return <p className="muted">Loading chain logs...</p>;
+    }
+
+    if (!chainLogs.length) {
+      return <p className="muted">No chain activity yet.</p>;
+    }
+
+    return (
+      <ul className="console-log-list advanced">
+        {chainLogs.map((log) => (
+          <li key={log.id}>
+            <span className="console-log-time">
+              {formatDateTime(log.blockTime || log.timestamp)}
+            </span>
+            <div className="console-log-message">
+              <strong>{log.label || "Chain interaction"}</strong>
+              <div className="chain-log-lines">
+                {log.txHash && (
+                  <div>
+                    <span className="chain-log-label">Transaction:</span>{" "}
+                    <code>{log.txHash}</code>
+                  </div>
+                )}
+                {log.gasUsed && (
+                  <div>
+                    <span className="chain-log-label">Gas usage:</span>{" "}
+                    {log.gasUsed}
+                  </div>
+                )}
+                {log.blockNumber !== null && log.blockNumber !== undefined && (
+                  <div>
+                    <span className="chain-log-label">Block number:</span>{" "}
+                    {log.blockNumber}
+                  </div>
+                )}
+                {log.blockTime && (
+                  <div>
+                    <span className="chain-log-label">Block time:</span>{" "}
+                    {formatDateTime(log.blockTime)}
+                  </div>
+                )}
+              </div>
+            </div>
+          </li>
+        ))}
+      </ul>
+    );
   }
 
   return (
@@ -882,23 +1020,22 @@ export default function App() {
 
         <footer className="console-footer">
           <div className="console-footer-header">
-            <strong>Console log</strong>
-            <span>
-              {role} · {address ? shortenMiddle(address, 6, 4) : "No wallet"}
-            </span>
+            <strong>{showAdvancedLogs ? "Chain console" : "Console log"}</strong>
+            <div className="console-footer-controls">
+              <span>
+                {role} · {address ? shortenMiddle(address, 6, 4) : "No wallet"}
+              </span>
+              <label className="advanced-toggle">
+                <input
+                  type="checkbox"
+                  checked={showAdvancedLogs}
+                  onChange={toggleAdvancedLogs}
+                />
+                <span>Advanced logs</span>
+              </label>
+            </div>
           </div>
-          {statusLog.length === 0 ? (
-            <p className="muted">No log entries yet.</p>
-          ) : (
-            <ul className="console-log-list">
-              {statusLog.map((entry) => (
-                <li key={entry.id}>
-                  <span className="console-log-time">{entry.timestamp}</span>
-                  <span className="console-log-message">{entry.message}</span>
-                </li>
-              ))}
-            </ul>
-          )}
+          {showAdvancedLogs ? renderChainLogs() : renderStatusLogs()}
         </footer>
       </div>
 
