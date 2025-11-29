@@ -1,7 +1,5 @@
 // backend/src/ipfs.js
-// Real IPFS client version compatible with ESM-only ipfs-http-client in a CJS backend.
 
-console.log("LOADED ipfs.js FROM:", __filename);
 const { TextDecoder } = require("util");
 
 // Lazy-load the ESM ipfs-http-client using dynamic import
@@ -24,7 +22,7 @@ async function getIpfs() {
 }
 
 // Store an arbitrary JSON-serializable object in IPFS
-// Returns a real IPFS CID string like "Qm..." or "bafy..."
+// Returns a real IPFS CID string 
 async function addJson(obj) {
   const ipfs = await getIpfs();
   const data = JSON.stringify(obj);

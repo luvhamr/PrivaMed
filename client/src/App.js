@@ -34,7 +34,7 @@ export default function App() {
   ]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [noteRecordId, setNoteRecordId] = useState("note-diane-1");
+  const [noteRecordId, setNoteRecordId] = useState("Med_History_Example");
   const [noteText, setNoteText] = useState("");
   const [fileToUpload, setFileToUpload] = useState(null);
   const [notifications, setNotifications] = useState([]);
