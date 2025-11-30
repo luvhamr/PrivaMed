@@ -39,6 +39,17 @@ npm install -g ganache@7.9.1
 
 # install truffle & test framework
 npm install truffle --save-dev chai chai-as-promised chai-bn @openzeppelin/test-helpers truffle-assertions
+
+# install IPFS daemon
+wget https://dist.ipfs.tech/kubo/v0.29.0/kubo_v0.29.0_linux-amd64.tar.gz
+
+tar -xvzf kubo*.tar.gz
+
+sudo bash install.sh
+
+ipfs init
+
+ipfs daemon
 ```
 ### 2. Start Ganache
 ```bash
