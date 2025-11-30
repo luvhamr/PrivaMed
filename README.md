@@ -30,10 +30,15 @@ _This project is a proof-of-concept operating on a local blockchain test network
 
 ### 1. Install Dependencies
 ```bash
+# clone repository
 git clone https://github.com/luvhamr/PrivaMed.git
 cd PrivaMed
-npm install
-cd client && npm install
+
+# install ganache
+npm install -g ganache@7.9.1
+
+# install truffle & test framework
+npm install truffle --save-dev chai chai-as-promised chai-bn @openzeppelin/test-helpers truffle-assertions
 ```
 ### 2. Start Ganache
 ```bash
