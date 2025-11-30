@@ -42,13 +42,9 @@ npm install truffle --save-dev chai chai-as-promised chai-bn @openzeppelin/test-
 
 # install IPFS daemon
 wget https://dist.ipfs.tech/kubo/v0.29.0/kubo_v0.29.0_linux-amd64.tar.gz
-
 tar -xvzf kubo*.tar.gz
-
 sudo bash install.sh
-
 ipfs init
-
 ipfs daemon
 ```
 ### 2. Start Ganache

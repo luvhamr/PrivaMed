@@ -55,10 +55,14 @@ fi
 # 3) Install truffle & testing libraries as dev dependencies
 info "Installing Truffle and test dependencies as devDependencies..."
 npm install --save-dev truffle chai chai-as-promised chai-bn @openzeppelin/test-helpers truffle-assertions
-
 info "Installed dev dependencies listed in package.json."
 
-# 4) Install IPFS Kubo (download, extract, run install.sh)
+# 4) Install ipfs-http-client as a project dependency (used by app/runtime)
+info "Installing ipfs-http-client as a project dependency..."
+npm install ipfs-http-client
+info "ipfs-http-client installed."
+
+# 5) Install IPFS Kubo (download, extract, run install.sh)
 info "Installing IPFS Kubo v${KUBO_VERSION}..."
 TMP_DIR="$(mktemp -d)"
 cd "${TMP_DIR}"
